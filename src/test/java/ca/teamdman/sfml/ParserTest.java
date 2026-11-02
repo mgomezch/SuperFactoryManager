@@ -3,13 +3,21 @@ package ca.teamdman.sfml;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 
 import org.junit.jupiter.api.Test;
 
 import ca.teamdman.sfm.common.label.LabelPositionHolder;
+import ca.teamdman.sfm.common.program.ProgramContext;
 import ca.teamdman.sfm.common.util.BlockPos;
 import ca.teamdman.sfml.ast.BoolConjunction;
+import ca.teamdman.sfml.ast.BoolDisjunction;
+import ca.teamdman.sfml.ast.BoolExpr;
 import ca.teamdman.sfml.ast.BoolHas;
 import ca.teamdman.sfml.ast.BoolNegation;
 import ca.teamdman.sfml.ast.BoolRedstone;
@@ -23,6 +31,7 @@ import ca.teamdman.sfml.ast.PulseTrigger;
 import ca.teamdman.sfml.ast.RedstoneOutputStatement;
 import ca.teamdman.sfml.ast.ResourceIdentifier;
 import ca.teamdman.sfml.ast.RoundRobin;
+import ca.teamdman.sfml.ast.SetOperator;
 import ca.teamdman.sfml.ast.Side;
 import ca.teamdman.sfml.ast.TimerTrigger;
 import ca.teamdman.sfml.program_builder.ProgramBuildResult;
@@ -510,5 +519,178 @@ public class ParserTest {
             timer.getBlock()
                 .getStatements()
                 .get(4) instanceof OutputStatement);
+    }
+
+    private static BoolExpr parseCondition(String condition) {
+        String code = "EVERY 20 TICKS DO\n" + "  IF " + condition + " THEN\n" + "    FORGET\n" + "  END\n" + "END";
+        ProgramBuildResult result = new ProgramBuilder(code).build();
+        assertTrue(result.isSuccess(), condition + " - Errors: " + result.getErrors());
+        TimerTrigger timer = (TimerTrigger) result.getProgram()
+            .getTriggers()
+            .get(0);
+        return ((IfStatement) timer.getBlock()
+            .getStatements()
+            .get(0)).getCondition();
+    }
+
+    private static BoolRedstone parseRedstone(String condition) {
+        BoolExpr expr = parseCondition(condition);
+        assertTrue(expr instanceof BoolRedstone, condition + " parsed as " + expr);
+        return (BoolRedstone) expr;
+    }
+
+    private static void assertLabels(BoolRedstone rs, String... names) {
+        assertNotNull(rs.getLabelAccess());
+        assertEquals(
+            names.length,
+            rs.getLabelAccess()
+                .getLabels()
+                .size());
+        for (int i = 0; i < names.length; i++) {
+            assertEquals(
+                names[i],
+                rs.getLabelAccess()
+                    .getLabels()
+                    .get(i)
+                    .getName());
+        }
+    }
+
+    @Test
+    public void testUnlabelledRedstoneCondition() {
+        BoolRedstone bare = parseRedstone("REDSTONE");
+        assertNull(bare.getLabelAccess());
+        assertEquals(ComparisonOperator.GREATER, bare.getComparison());
+        assertEquals(0, bare.getTargetValue());
+
+        BoolRedstone level = parseRedstone("REDSTONE LEVEL >= 7");
+        assertNull(level.getLabelAccess());
+        assertEquals(ComparisonOperator.GREATER_OR_EQUAL, level.getComparison());
+        assertEquals(7, level.getTargetValue());
+
+        BoolRedstone levels = parseRedstone("redstone levels eq 15");
+        assertNull(levels.getLabelAccess());
+        assertEquals(ComparisonOperator.EQUALS, levels.getComparison());
+        assertEquals(15, levels.getTargetValue());
+    }
+
+    @Test
+    public void testLabelledRedstoneCondition() {
+        BoolRedstone rcv = parseRedstone("rcv REDSTONE LEVEL > 0");
+        assertLabels(rcv, "rcv");
+        assertEquals(SetOperator.OVERALL, rcv.getSetOperator());
+        assertEquals(ComparisonOperator.GREATER, rcv.getComparison());
+        assertEquals(0, rcv.getTargetValue());
+
+        BoolRedstone each = parseRedstone("EACH a, b REDSTONE >= 8");
+        assertLabels(each, "a", "b");
+        assertEquals(SetOperator.EVERY, each.getSetOperator());
+        assertEquals(ComparisonOperator.GREATER_OR_EQUAL, each.getComparison());
+        assertEquals(8, each.getTargetValue());
+
+        BoolRedstone any = parseRedstone("ANY sensors REDSTONE LEVEL = 15");
+        assertLabels(any, "sensors");
+        assertEquals(SetOperator.SOME, any.getSetOperator());
+        assertEquals(ComparisonOperator.EQUALS, any.getComparison());
+        assertEquals(15, any.getTargetValue());
+
+        BoolRedstone overall = parseRedstone("OVERALL \"my sensor\" REDSTONE LEVELS LT 3");
+        assertLabels(overall, "my sensor");
+        assertEquals(SetOperator.OVERALL, overall.getSetOperator());
+        assertEquals(ComparisonOperator.LESSER, overall.getComparison());
+
+        // without a comparison it defaults to > 0, like the unlabelled form
+        BoolRedstone bare = parseRedstone("rcv REDSTONE");
+        assertLabels(bare, "rcv");
+        assertEquals(ComparisonOperator.GREATER, bare.getComparison());
+        assertEquals(0, bare.getTargetValue());
+    }
+
+    @Test
+    public void testLabelledRedstoneConditionKeywordLabels() {
+        // REDSTONE, LEVEL and ANY are also valid label names
+        assertLabels(parseRedstone("redstone REDSTONE > 0"), "redstone");
+        assertLabels(parseRedstone("level REDSTONE LEVEL > 0"), "level");
+        assertLabels(parseRedstone("any REDSTONE > 0"), "any");
+        assertLabels(parseRedstone("ANY any REDSTONE > 0"), "any");
+
+        String code = "EVERY 20 TICKS DO\n" + "  INPUT FROM any\n" + "  OUTPUT TO level\n" + "END";
+        ProgramBuildResult result = new ProgramBuilder(code).build();
+        assertTrue(result.isSuccess(), "Errors: " + result.getErrors());
+    }
+
+    @Test
+    public void testLabelledRedstoneConditionInExpressions() {
+        BoolExpr expr = parseCondition("a REDSTONE > 3 AND REDSTONE > 0");
+        assertTrue(expr instanceof BoolConjunction);
+        BoolConjunction conj = (BoolConjunction) expr;
+        assertLabels((BoolRedstone) conj.getLeft(), "a");
+        assertNull(((BoolRedstone) conj.getRight()).getLabelAccess());
+
+        BoolExpr negated = parseCondition("NOT EACH a REDSTONE LEVEL = 0");
+        assertTrue(negated instanceof BoolNegation);
+
+        assertTrue(parseCondition("chest HAS > 0 OR rcv REDSTONE > 0") instanceof BoolDisjunction);
+    }
+
+    @Test
+    public void testLabelledRedstoneConditionReferencesLabels() {
+        String code = "EVERY 20 TICKS DO\n" + "  IF EACH a, b REDSTONE >= 8 THEN\n"
+            + "    FORGET\n"
+            + "  ELSE IF ANY \"c d\" REDSTONE = 15 THEN\n"
+            + "    FORGET\n"
+            + "  END\n"
+            + "END";
+        ProgramBuildResult result = new ProgramBuilder(code).build();
+        assertTrue(result.isSuccess(), "Errors: " + result.getErrors());
+        assertEquals(
+            new HashSet<>(Arrays.asList("a", "b", "c d")),
+            result.getProgram()
+                .getReferencedLabels());
+    }
+
+    @Test
+    public void testLabelledRedstoneSetOperators() {
+        // OVERALL compares the strongest signal
+        BoolRedstone overall = parseRedstone("rcv REDSTONE >= 8");
+        assertTrue(overall.test(Arrays.asList(0, 9, 3)));
+        assertFalse(overall.test(Arrays.asList(0, 7, 3)));
+        assertFalse(overall.test(Collections.emptyList()));
+        assertTrue(parseRedstone("rcv REDSTONE = 0").test(Collections.emptyList()));
+
+        // EACH needs every block to satisfy it, and at least one block
+        BoolRedstone each = parseRedstone("EACH rcv REDSTONE >= 8");
+        assertTrue(each.test(Arrays.asList(8, 15)));
+        assertFalse(each.test(Arrays.asList(8, 7)));
+        assertFalse(each.test(Collections.emptyList()));
+
+        // ANY needs at least one block to satisfy it
+        BoolRedstone any = parseRedstone("ANY rcv REDSTONE < 4");
+        assertTrue(any.test(Arrays.asList(15, 3)));
+        assertFalse(any.test(Arrays.asList(15, 4)));
+        assertFalse(any.test(Collections.emptyList()));
+
+        // OVERALL and ANY differ for comparisons that the maximum doesn't capture
+        assertFalse(parseRedstone("rcv REDSTONE < 4").test(Arrays.asList(15, 3)));
+
+        BoolRedstone one = parseRedstone("ONE rcv REDSTONE > 0");
+        assertTrue(one.test(Arrays.asList(0, 5)));
+        assertFalse(one.test(Arrays.asList(5, 5)));
+    }
+
+    @Test
+    public void testLabelledRedstoneEvaluateResolvesLabels() {
+        LabelPositionHolder holder = new LabelPositionHolder();
+        holder.addPosition("a", new BlockPos(1, 0, 0));
+        holder.addPosition("a", new BlockPos(2, 0, 0));
+        // no world: every block reads as unpowered
+        ProgramContext context = new ProgramContext(null, null, null, holder, 0, false);
+
+        assertTrue(parseRedstone("EACH a REDSTONE = 0").evaluate(context));
+        assertFalse(parseRedstone("ANY a REDSTONE > 0").evaluate(context));
+        // a label with no blocks fails EACH even though no block disagrees
+        assertFalse(parseRedstone("EACH missing REDSTONE = 0").evaluate(context));
+        assertTrue(parseRedstone("missing REDSTONE = 0").evaluate(context));
+        assertTrue(parseRedstone("REDSTONE = 0").evaluate(context));
     }
 }
