@@ -49,6 +49,9 @@ public enum SetOperator implements ASTNode {
         if (upper.equals("EACH")) {
             return EVERY;
         }
+        if (upper.equals("ANY")) {
+            return SOME;
+        }
         try {
             return SetOperator.valueOf(upper);
         } catch (IllegalArgumentException e) {
