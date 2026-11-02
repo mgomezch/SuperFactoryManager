@@ -119,6 +119,8 @@ boolexpr        : TRUE                              #BooleanTrue
                 | boolexpr OR boolexpr              #BooleanDisjunction
                 | setOp? labelAccess HAS comparisonOp number resourceIdDisjunction? with? (EXCEPT resourceIdList)?  #BooleanHas
                 | REDSTONE (LEVEL | LEVELS)? (comparisonOp number)?   #BooleanRedstone
+                // OVERALL (default) tests the strongest signal into the labelled blocks; EACH, ANY, etc. test each block's own
+                | setOp? labelAccess REDSTONE (LEVEL | LEVELS)? (comparisonOp number)?   #BooleanLabelledRedstone
                 ;
 
 comparisonOp    : GT
@@ -136,6 +138,7 @@ setOp           : OVERALL
                 | SOME
                 | EVERY
                 | EACH
+                | ANY
                 | ONE
                 | LONE
                 ;
@@ -156,7 +159,7 @@ label           : (identifier)  #RawLabel
 
 emptyslots      : EMPTY (SLOTS | SLOT) IN ;
 
-identifier : (IDENTIFIER | REDSTONE | LEVEL | LEVELS | GLOBAL | SECOND | SECONDS | TOP | BOTTOM | LEFT | RIGHT | FRONT | BACK) ;
+identifier : (IDENTIFIER | ANY | REDSTONE | LEVEL | LEVELS | GLOBAL | SECOND | SECONDS | TOP | BOTTOM | LEFT | RIGHT | FRONT | BACK) ;
 
 // GENERAL
 string: STRING ;
@@ -176,6 +179,7 @@ ELSE    : E L S E ;
 HAS     : H A S ;
 OVERALL : O V E R A L L ;
 SOME    : S O M E ;
+ANY     : A N Y ;
 ONE     : O N E ;
 LONE    : L O N E ;
 

@@ -982,6 +982,26 @@ public class SFMLBaseListener implements SFMLListener {
      * </p>
      */
     @Override
+    public void enterBooleanLabelledRedstone(SFMLParser.BooleanLabelledRedstoneContext ctx) {}
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The default implementation does nothing.
+     * </p>
+     */
+    @Override
+    public void exitBooleanLabelledRedstone(SFMLParser.BooleanLabelledRedstoneContext ctx) {}
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The default implementation does nothing.
+     * </p>
+     */
+    @Override
     public void enterComparisonOp(SFMLParser.ComparisonOpContext ctx) {}
 
     /**

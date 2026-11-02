@@ -422,6 +422,15 @@ public interface SFMLVisitor<T> extends ParseTreeVisitor<T> {
     T visitBooleanTrue(SFMLParser.BooleanTrueContext ctx);
 
     /**
+     * Visit a parse tree produced by the {@code BooleanLabelledRedstone}
+     * labeled alternative in {@link SFMLParser#boolexpr}.
+     * 
+     * @param ctx the parse tree
+     * @return the visitor result
+     */
+    T visitBooleanLabelledRedstone(SFMLParser.BooleanLabelledRedstoneContext ctx);
+
+    /**
      * Visit a parse tree produced by {@link SFMLParser#comparisonOp}.
      * 
      * @param ctx the parse tree

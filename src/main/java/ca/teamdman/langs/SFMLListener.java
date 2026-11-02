@@ -731,6 +731,22 @@ public interface SFMLListener extends ParseTreeListener {
     void exitBooleanTrue(SFMLParser.BooleanTrueContext ctx);
 
     /**
+     * Enter a parse tree produced by the {@code BooleanLabelledRedstone}
+     * labeled alternative in {@link SFMLParser#boolexpr}.
+     * 
+     * @param ctx the parse tree
+     */
+    void enterBooleanLabelledRedstone(SFMLParser.BooleanLabelledRedstoneContext ctx);
+
+    /**
+     * Exit a parse tree produced by the {@code BooleanLabelledRedstone}
+     * labeled alternative in {@link SFMLParser#boolexpr}.
+     * 
+     * @param ctx the parse tree
+     */
+    void exitBooleanLabelledRedstone(SFMLParser.BooleanLabelledRedstoneContext ctx);
+
+    /**
      * Enter a parse tree produced by {@link SFMLParser#comparisonOp}.
      * 
      * @param ctx the parse tree
