@@ -159,6 +159,22 @@ public final class SyntaxRegistry {
 
         register(
             new SyntaxSnippet(
+                "cond_redstone_label",
+                "<rcv> REDSTONE LEVEL >= <level>",
+                SnippetCategory.CONDITION,
+                "<rcv> REDSTONE LEVEL >= <level>",
+                "Tests the strongest signal into the labelled blocks"));
+
+        register(
+            new SyntaxSnippet(
+                "cond_redstone_label_each",
+                "EACH <rcv> REDSTONE LEVEL >= <level>",
+                SnippetCategory.CONDITION,
+                "EACH <rcv> REDSTONE LEVEL >= <level>",
+                "Tests every labelled block's signal (ANY: at least one)"));
+
+        register(
+            new SyntaxSnippet(
                 "cond_not",
                 "NOT <condition>",
                 SnippetCategory.CONDITION,
