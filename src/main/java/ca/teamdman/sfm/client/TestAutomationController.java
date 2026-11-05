@@ -24,6 +24,12 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
+
 import ca.teamdman.sfm.Config;
 import ca.teamdman.sfm.SuperFactoryManager;
 import ca.teamdman.sfm.common.block.ModBlocks;
@@ -103,15 +109,25 @@ public class TestAutomationController {
         }
     }
 
+    /**
+     * Serves one connection: each line is a JSON request {@code {"id": <any>, "cmd": "<name>", "args": {...}}},
+     * answered by one JSON line {@code {"id": <same>, "ok": true, "result": <any>}} or
+     * {@code {"id": <same>, "ok": false, "error": {"code": "<CODE>", "message": "<text>"}}}.
+     */
     private void handleClient(Socket client) {
         CompletableFuture.runAsync(() -> {
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-                PrintWriter out = new PrintWriter(client.getOutputStream(), true)) {
-                String line = in.readLine();
-                if (line == null) return;
-                line = line.trim();
-                String response = processCommand(line);
-                out.println(response);
+            try (
+                BufferedReader in = new BufferedReader(
+                    new InputStreamReader(client.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
+                PrintWriter out = new PrintWriter(
+                    new java.io.OutputStreamWriter(client.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8),
+                    true)) {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.trim()
+                        .isEmpty()) continue;
+                    out.println(handleRequest(line));
+                }
             } catch (Exception e) {
                 SuperFactoryManager.LOG.error("[TestAutomation] Error handling client: " + e.getMessage());
             } finally {
@@ -122,11 +138,71 @@ public class TestAutomationController {
         });
     }
 
-    private String processCommand(String commandLine) {
-        String[] parts = commandLine.split("\\s+", 2);
-        String cmd = parts[0].toLowerCase();
-        String arg = parts.length > 1 ? parts[1] : "";
+    private String handleRequest(String line) {
+        JsonElement id = JsonNull.INSTANCE;
+        try {
+            JsonElement root;
+            try {
+                root = new JsonParser().parse(line);
+            } catch (com.google.gson.JsonParseException e) {
+                throw new CommandError("BAD_REQUEST", "request is not JSON: " + e.getMessage());
+            }
+            if (!root.isJsonObject()) throw new CommandError("BAD_REQUEST", "request must be a JSON object");
+            JsonObject req = root.getAsJsonObject();
+            if (req.has("id")) id = req.get("id");
+            JsonElement cmdElem = req.get("cmd");
+            if (cmdElem == null || !cmdElem.isJsonPrimitive()
+                || !cmdElem.getAsJsonPrimitive()
+                    .isString())
+                throw new CommandError("BAD_REQUEST", "request needs a string 'cmd'");
+            JsonElement argsElem = req.get("args");
+            Args args;
+            if (argsElem == null || argsElem.isJsonNull()) args = Args.EMPTY;
+            else if (argsElem.isJsonObject()) args = new Args(argsElem.getAsJsonObject());
+            else throw new CommandError("BAD_REQUEST", "'args' must be a JSON object");
 
+            String result = processCommand(
+                cmdElem.getAsString()
+                    .trim()
+                    .toLowerCase(),
+                args);
+            JsonObject resp = new JsonObject();
+            resp.add("id", id);
+            resp.addProperty("ok", true);
+            resp.add("result", toResult(result));
+            return resp.toString();
+        } catch (CommandError e) {
+            return errorResponse(id, e.code, e.getMessage());
+        } catch (Throwable t) {
+            CommandError e = CommandError.wrap("INTERNAL", t);
+            return errorResponse(id, e.code, e.getMessage());
+        }
+    }
+
+    /** A command's result as JSON: the JSON it built, or its message as a JSON string. */
+    private static JsonElement toResult(String result) {
+        if (result == null) return JsonNull.INSTANCE;
+        String t = result.trim();
+        if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+            try {
+                return new JsonParser().parse(t);
+            } catch (com.google.gson.JsonParseException ignored) {}
+        }
+        return new JsonPrimitive(result);
+    }
+
+    private static String errorResponse(JsonElement id, String code, String message) {
+        JsonObject err = new JsonObject();
+        err.addProperty("code", code);
+        err.addProperty("message", message);
+        JsonObject resp = new JsonObject();
+        resp.add("id", id);
+        resp.addProperty("ok", false);
+        resp.add("error", err);
+        return resp.toString();
+    }
+
+    private String processCommand(String cmd, Args a) {
         if ("ping".equals(cmd)) {
             return "pong";
         }
@@ -141,44 +217,51 @@ public class TestAutomationController {
                         ItemStack held = mc.thePlayer.getHeldItem();
                         String heldName = held != null ? held.getItem()
                             .getItemStackDisplayName(held) : "empty";
-                        return String.format(
-                            "IN_WORLD [pos: %.1f, %.1f, %.1f, gui: %s, held: %s]",
-                            mc.thePlayer.posX,
-                            mc.thePlayer.posY,
-                            mc.thePlayer.posZ,
-                            gui,
-                            heldName);
-                    } else if (mc.currentScreen instanceof GuiMainMenu) {
-                        return "MAIN_MENU";
-                    } else if (mc.currentScreen != null) {
-                        return "GUI: " + mc.currentScreen.getClass()
-                            .getName();
+                        // status: {state: IN_WORLD, pos, gui, held} | {state: MAIN_MENU|GUI, gui} | {state: LOADING}
+                        JsonObject st = new JsonObject();
+                        st.addProperty("state", "IN_WORLD");
+                        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+                        pos.add(new JsonPrimitive(mc.thePlayer.posX));
+                        pos.add(new JsonPrimitive(mc.thePlayer.posY));
+                        pos.add(new JsonPrimitive(mc.thePlayer.posZ));
+                        st.add("pos", pos);
+                        st.addProperty("gui", gui);
+                        st.addProperty("held", heldName);
+                        return st.toString();
                     } else {
-                        return "LOADING";
+                        JsonObject st = new JsonObject();
+                        st.addProperty(
+                            "state",
+                            mc.currentScreen instanceof GuiMainMenu ? "MAIN_MENU"
+                                : mc.currentScreen != null ? "GUI" : "LOADING");
+                        if (mc.currentScreen != null) st.addProperty(
+                            "gui",
+                            mc.currentScreen.getClass()
+                                .getName());
+                        return st.toString();
                     }
 
                 case "autoworld":
                     if (mc.thePlayer != null) {
                         return "ALREADY_IN_WORLD";
                     }
-                    String worldName = arg.isEmpty() ? "TestWorld" : arg;
+                    String worldName = a.str("name", "TestWorld");
                     launchWorld(worldName);
                     return "LAUNCHING_WORLD: " + worldName;
 
                 case "exportlogs":
-                    if (!arg.isEmpty()) {
-                        Config.exportLogsToFile = Boolean.parseBoolean(arg.trim());
-                    }
+                    // exportlogs {[enabled]}
+                    Config.exportLogsToFile = a.b("enabled", Config.exportLogsToFile);
                     return "EXPORT_LOGS_TO_FILE: " + Config.exportLogsToFile;
 
                 case "discordbutton":
-                    if (!arg.isEmpty()) {
-                        Config.showDiscordButton = Boolean.parseBoolean(arg.trim());
-                    }
+                    // discordbutton {[enabled]}
+                    Config.showDiscordButton = a.b("enabled", Config.showDiscordButton);
                     return "SHOW_DISCORD_BUTTON: " + Config.showDiscordButton;
 
                 case "runscenario": {
-                    int scen = Integer.parseInt(arg.trim());
+                    // runscenario {scenario}
+                    int scen = a.i("scenario");
                     boolean prevExport = Config.exportLogsToFile;
                     Config.exportLogsToFile = true;
                     File logF = new File("logs/sfm_server_export.log");
@@ -192,7 +275,7 @@ public class TestAutomationController {
                     if (ws == null) {
                         ws = mc.theWorld;
                     }
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     int bx = 500, by = 60, bz = 0;
                     BlockPos c1 = new BlockPos(bx + 1, by, bz);
@@ -235,7 +318,8 @@ public class TestAutomationController {
                     }
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(bx, by, bz);
-                    if (mgr == null) return "ERROR: No manager tile entity at " + bx + "," + by + "," + bz;
+                    if (mgr == null)
+                        throw CommandError.of("ERROR: No manager tile entity at " + bx + "," + by + "," + bz);
 
                     for (Object te : ws.loadedTileEntityList) {
                         if (te instanceof TileEntityManager && te != mgr) {
@@ -261,16 +345,14 @@ public class TestAutomationController {
                 }
 
                 case "setlabel": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 7) return "ERROR: Usage: setlabel <mx> <my> <mz> <label> <tx> <ty> <tz>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
-                    String labelName = sp[3];
-                    int tx = Integer.parseInt(sp[4]);
-                    int ty = Integer.parseInt(sp[5]);
-                    int tz = Integer.parseInt(sp[6]);
+                    // setlabel {x, y, z, label, tx, ty, tz}: the manager at x, y, z labels the block at tx, ty, tz
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
+                    String labelName = a.str("label");
+                    int tx = a.i("tx");
+                    int ty = a.i("ty");
+                    int tz = a.i("tz");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -278,10 +360,10 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     ItemStack disk = mgr.getStackInSlot(0);
                     if (disk == null || disk.getItem() != ModItems.disk) {
@@ -301,12 +383,10 @@ public class TestAutomationController {
                 }
 
                 case "clearlabels": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 3) return "ERROR: Usage: clearlabels <mx> <my> <mz>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
+                    // clearlabels {x, y, z}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -314,10 +394,10 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     ItemStack disk = mgr.getStackInSlot(0);
                     if (disk == null || disk.getItem() != ModItems.disk) {
@@ -336,13 +416,11 @@ public class TestAutomationController {
                 }
 
                 case "programmanager": {
-                    String[] sp = arg.trim()
-                        .split("\\s+", 4);
-                    if (sp.length < 4) return "ERROR: Usage: programmanager <mx> <my> <mz> <code>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
-                    String pCode = sp[3].replace("\\n", "\n");
+                    // programmanager {x, y, z, code}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
+                    String pCode = a.str("code");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -350,10 +428,10 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     ItemStack disk = mgr.getStackInSlot(0);
                     if (disk == null || disk.getItem() != ModItems.disk) {
@@ -374,16 +452,16 @@ public class TestAutomationController {
                             clientMgr.recompile(pCode);
                         }
                     }
-                    return "PROGRAM_SET: " + (mgr.hasCompiledProgram() ? "VALID" : "INVALID");
+                    JsonObject programmed = new JsonObject();
+                    programmed.addProperty("valid", mgr.hasCompiledProgram());
+                    return programmed.toString();
                 }
 
                 case "getmanagerstatus": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 3) return "ERROR: Usage: getmanagerstatus <mx> <my> <mz>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
+                    // getmanagerstatus {x, y, z}: {tick, running, hasDisk, hasProgram, status}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -391,29 +469,26 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
-                    return String.format(
-                        "{\"tick\":%d,\"running\":%s,\"hasDisk\":%s,\"hasProgram\":%s,\"status\":\"%s\"}",
-                        mgr.getManagerTick(),
-                        mgr.isRunning(),
-                        mgr.getDisk() != null,
-                        mgr.hasCompiledProgram(),
-                        mgr.getStatusMessage()
-                            .replace("\"", "\\\""));
+                    JsonObject ms = new JsonObject();
+                    ms.addProperty("tick", mgr.getManagerTick());
+                    ms.addProperty("running", mgr.isRunning());
+                    ms.addProperty("hasDisk", mgr.getDisk() != null);
+                    ms.addProperty("hasProgram", mgr.hasCompiledProgram());
+                    ms.addProperty("status", mgr.getStatusMessage());
+                    return ms.toString();
                 }
 
                 case "stepmanager": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 3) return "ERROR: Usage: stepmanager <mx> <my> <mz> [ticks]";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
-                    int steps = sp.length > 3 ? Integer.parseInt(sp[3]) : 1;
+                    // stepmanager {x, y, z, [ticks]}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
+                    int steps = a.i("ticks", 1);
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -421,10 +496,10 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     boolean wasRunning = mgr.isRunning();
                     mgr.setRunning(true);
@@ -436,13 +511,11 @@ public class TestAutomationController {
                 }
 
                 case "setrunning": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 4) return "ERROR: Usage: setrunning <mx> <my> <mz> <true|false>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
-                    boolean run = Boolean.parseBoolean(sp[3]);
+                    // setrunning {x, y, z, running}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
+                    boolean run = a.b("running");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -450,10 +523,10 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     mgr.setRunning(run);
                     mgr.markDirty();
@@ -461,13 +534,11 @@ public class TestAutomationController {
                 }
 
                 case "settick": {
-                    String[] sp = arg.trim()
-                        .split("\\s+");
-                    if (sp.length < 4) return "ERROR: Usage: settick <mx> <my> <mz> <tick>";
-                    int mx = Integer.parseInt(sp[0]);
-                    int my = Integer.parseInt(sp[1]);
-                    int mz = Integer.parseInt(sp[2]);
-                    long tick = Long.parseLong(sp[3]);
+                    // settick {x, y, z, tick}
+                    int mx = a.i("x");
+                    int my = a.i("y");
+                    int mz = a.i("z");
+                    long tick = a.l("tick");
 
                     net.minecraft.world.World ws = null;
                     if (net.minecraft.server.MinecraftServer.getServer() != null) {
@@ -475,67 +546,59 @@ public class TestAutomationController {
                             .worldServerForDimension(mc.thePlayer != null ? mc.thePlayer.dimension : 0);
                     }
                     if (ws == null) ws = mc.theWorld;
-                    if (ws == null) return "ERROR: No world";
+                    if (ws == null) throw CommandError.of("ERROR: No world");
 
                     TileEntityManager mgr = (TileEntityManager) ws.getTileEntity(mx, my, mz);
-                    if (mgr == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
+                    if (mgr == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
 
                     mgr.setManagerTick(tick);
                     mgr.markDirty();
                     return "TICK_SET: " + mgr.getManagerTick();
                 }
 
-                case "opengui":
-                    if ("labelgun".equalsIgnoreCase(arg)) {
-                        if (mc.thePlayer == null) return "ERROR: Player is null";
+                case "opengui": {
+                    // opengui {gui: labelgun|inventory|editor|manager, [x, y, z]}: the editor and manager GUIs are
+                    // a manager's, at x, y, z (10, 6, 420 by default)
+                    String gui = a.str("gui");
+                    if ("labelgun".equalsIgnoreCase(gui)) {
+                        if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
                         ItemStack stack = mc.thePlayer.getHeldItem();
                         if (stack == null || stack.getItem() != ModItems.labelGun) {
                             stack = new ItemStack(ModItems.labelGun);
                         }
                         mc.displayGuiScreen(new GuiLabelGun(mc.thePlayer, stack));
                         return "OPENED_LABEL_GUN_GUI";
-                    } else if ("inventory".equalsIgnoreCase(arg)) {
-                        if (mc.thePlayer == null) return "ERROR: Player is null";
+                    } else if ("inventory".equalsIgnoreCase(gui)) {
+                        if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
                         mc.displayGuiScreen(new GuiInventory(mc.thePlayer));
                         return "OPENED_INVENTORY_GUI";
-                    } else if ("editor".equalsIgnoreCase(arg) || arg.toLowerCase()
-                        .startsWith("editor")) {
-                            if (mc.thePlayer == null) return "ERROR: Player is null";
-                            int mx = 10, my = 6, mz = 420;
-                            String[] ep = arg.trim()
-                                .split("\\s+");
-                            if (ep.length >= 4) {
-                                mx = Integer.parseInt(ep[1]);
-                                my = Integer.parseInt(ep[2]);
-                                mz = Integer.parseInt(ep[3]);
-                            }
-                            TileEntityManager m = (TileEntityManager) mc.theWorld.getTileEntity(mx, my, mz);
-                            if (m == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
-                            mc.displayGuiScreen(new ca.teamdman.sfm.client.gui.GuiCodeEditor(m, mc.currentScreen));
-                            return "OPENED_EDITOR_GUI";
-                        } else if ("manager".equalsIgnoreCase(arg) || arg.toLowerCase()
-                            .startsWith("manager")) {
-                                if (mc.thePlayer == null) return "ERROR: Player is null";
-                                int mx = 10, my = 6, mz = 420;
-                                String[] ep = arg.trim()
-                                    .split("\\s+");
-                                if (ep.length >= 4) {
-                                    mx = Integer.parseInt(ep[1]);
-                                    my = Integer.parseInt(ep[2]);
-                                    mz = Integer.parseInt(ep[3]);
-                                } else if (mc.theWorld.getTileEntity(500, 60, 0) instanceof TileEntityManager) {
-                                    mx = 500;
-                                    my = 60;
-                                    mz = 0;
-                                }
-                                TileEntityManager m = (TileEntityManager) mc.theWorld.getTileEntity(mx, my, mz);
-                                if (m == null) return "ERROR: No manager at " + mx + "," + my + "," + mz;
-                                mc.displayGuiScreen(
-                                    new ca.teamdman.sfm.common.gui.GuiManager(mc.thePlayer.inventory, m));
-                                return "OPENED_MANAGER_GUI";
-                            } else {
-                                return "UNKNOWN_GUI: " + arg;
-                            }
+                    } else if ("editor".equalsIgnoreCase(gui)) {
+                        if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                        int mx = a.i("x", 10), my = a.i("y", 6), mz = a.i("z", 420);
+                        TileEntityManager m = (TileEntityManager) mc.theWorld.getTileEntity(mx, my, mz);
+                        if (m == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
+                        mc.displayGuiScreen(new ca.teamdman.sfm.client.gui.GuiCodeEditor(m, mc.currentScreen));
+                        return "OPENED_EDITOR_GUI";
+                    } else if ("manager".equalsIgnoreCase(gui)) {
+                        if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                        int mx = 10, my = 6, mz = 420;
+                        if (a.has("x")) {
+                            mx = a.i("x");
+                            my = a.i("y");
+                            mz = a.i("z");
+                        } else if (mc.theWorld.getTileEntity(500, 60, 0) instanceof TileEntityManager) {
+                            mx = 500;
+                            my = 60;
+                            mz = 0;
+                        }
+                        TileEntityManager m = (TileEntityManager) mc.theWorld.getTileEntity(mx, my, mz);
+                        if (m == null) throw CommandError.of("ERROR: No manager at " + mx + "," + my + "," + mz);
+                        mc.displayGuiScreen(new ca.teamdman.sfm.common.gui.GuiManager(mc.thePlayer.inventory, m));
+                        return "OPENED_MANAGER_GUI";
+                    } else {
+                        throw CommandError.of("UNKNOWN_GUI: " + gui);
+                    }
+                }
 
                 case "closegui":
                     mc.gameSettings.pauseOnLostFocus = false;
@@ -544,25 +607,27 @@ public class TestAutomationController {
                     return "CLOSED_GUI";
 
                 case "slot":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    int slot = Integer.parseInt(arg.trim());
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    int slot = a.i("slot");
                     mc.thePlayer.inventory.currentItem = slot;
                     ItemStack slotItem = mc.thePlayer.getHeldItem();
                     return "SLOT: " + slot + " (" + (slotItem != null ? slotItem.getDisplayName() : "empty") + ")";
 
                 case "useitem":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
                     ItemStack heldItem = mc.thePlayer.getHeldItem();
                     if (heldItem != null) {
                         heldItem.getItem()
                             .onItemRightClick(heldItem, mc.theWorld, mc.thePlayer);
                         return "USED_ITEM: " + heldItem.getDisplayName();
                     }
-                    return "NO_HELD_ITEM";
+                    throw new CommandError("NO_HELD_ITEM", "the player holds nothing");
 
-                case "type":
-                    if (mc.currentScreen == null) return "ERROR: No active GUI";
-                    for (char c : arg.toCharArray()) {
+                case "type": {
+                    // type {text}: typed into the open GUI
+                    if (mc.currentScreen == null) throw CommandError.of("ERROR: No active GUI");
+                    String text = a.str("text");
+                    for (char c : text.toCharArray()) {
                         try {
                             if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
                                 java.lang.reflect.Method km = ca.teamdman.sfm.client.gui.GuiCodeEditor.class
@@ -576,29 +641,31 @@ public class TestAutomationController {
                                 km.invoke(mc.currentScreen, c, 0);
                             }
                         } catch (Exception e) {
-                            return "ERROR_TYPE: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_TYPE", e);
                         }
                     }
-                    return "TYPED: " + arg;
+                    return "TYPED: " + text;
+                }
 
                 case "settext":
+                    // settext {text}: the label gun's label field
                     if (mc.currentScreen instanceof ca.teamdman.sfm.common.gui.GuiLabelGun) {
                         try {
                             java.lang.reflect.Field f = ca.teamdman.sfm.common.gui.GuiLabelGun.class
                                 .getDeclaredField("labelField");
                             f.setAccessible(true);
                             GuiTextField tf = (GuiTextField) f.get(mc.currentScreen);
-                            tf.setText(arg);
+                            tf.setText(a.str("text"));
                             java.lang.reflect.Method m = ca.teamdman.sfm.common.gui.GuiLabelGun.class
                                 .getDeclaredMethod("rebuildLabelButtons");
                             m.setAccessible(true);
                             m.invoke(mc.currentScreen);
-                            return "SET_TEXT: " + arg;
+                            return "SET_TEXT: " + a.str("text");
                         } catch (Exception e) {
-                            return "ERROR_SET_TEXT: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_SET_TEXT", e);
                         }
                     }
-                    return "NOT_LABEL_GUN_GUI";
+                    throw new CommandError("WRONG_GUI", "the label gun GUI is not open");
 
                 case "enter":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.common.gui.GuiLabelGun) {
@@ -609,14 +676,15 @@ public class TestAutomationController {
                             m.invoke(mc.currentScreen);
                             return "DONE_TRIGGERED";
                         } catch (Exception e) {
-                            return "ERROR_DONE: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_DONE", e);
                         }
                     }
-                    return "NOT_LABEL_GUN_GUI";
+                    throw new CommandError("WRONG_GUI", "the label gun GUI is not open");
 
                 case "key":
-                    if (mc.currentScreen == null) return "ERROR: No active GUI";
-                    int keyCode = Integer.parseInt(arg.trim());
+                    if (mc.currentScreen == null) throw CommandError.of("ERROR: No active GUI");
+                    // key {key}: an LWJGL key code typed into the open GUI
+                    int keyCode = a.i("key");
                     try {
                         if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
                             java.lang.reflect.Method km = ca.teamdman.sfm.client.gui.GuiCodeEditor.class
@@ -630,21 +698,22 @@ public class TestAutomationController {
                             km.invoke(mc.currentScreen, '\0', keyCode);
                         }
                     } catch (Exception e) {
-                        return "ERROR_KEY: " + e.getMessage();
+                        throw CommandError.wrap("ERROR_KEY", e);
                     }
                     return "KEY_PRESSED: " + keyCode;
 
                 case "chat":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    mc.thePlayer.sendChatMessage(arg);
-                    return "CHAT_SENT: " + arg;
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    // chat {message}
+                    mc.thePlayer.sendChatMessage(a.str("message"));
+                    return "CHAT_SENT: " + a.str("message");
 
                 case "click":
-                    if (mc.currentScreen == null) return "ERROR: No active GUI to click";
-                    String[] coords = arg.split("\\s+");
-                    int x = Integer.parseInt(coords[0]);
-                    int y = Integer.parseInt(coords[1]);
-                    int button = coords.length > 2 ? Integer.parseInt(coords[2]) : 0;
+                    if (mc.currentScreen == null) throw CommandError.of("ERROR: No active GUI to click");
+                    // click {x, y, [button]}
+                    int x = a.i("x");
+                    int y = a.i("y");
+                    int button = a.i("button", 0);
                     try {
                         if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
                             java.lang.reflect.Method m = ca.teamdman.sfm.client.gui.GuiCodeEditor.class
@@ -658,18 +727,18 @@ public class TestAutomationController {
                             m.invoke(mc.currentScreen, x, y, button);
                         }
                     } catch (Exception e) {
-                        return "ERROR_CLICK: " + e.getMessage();
+                        throw CommandError.wrap("ERROR_CLICK", e);
                     }
                     return "CLICKED: " + x + ", " + y + " (button " + button + ")";
 
                 case "drag":
-                    if (mc.currentScreen == null) return "ERROR: No active GUI to drag";
-                    String[] dCoords = arg.split("\\s+");
-                    int dx1 = Integer.parseInt(dCoords[0]);
-                    int dy1 = Integer.parseInt(dCoords[1]);
-                    int dx2 = Integer.parseInt(dCoords[2]);
-                    int dy2 = Integer.parseInt(dCoords[3]);
-                    int steps = dCoords.length > 4 ? Integer.parseInt(dCoords[4]) : 10;
+                    if (mc.currentScreen == null) throw CommandError.of("ERROR: No active GUI to drag");
+                    // drag {x1, y1, x2, y2, [steps]}
+                    int dx1 = a.i("x1");
+                    int dy1 = a.i("y1");
+                    int dx2 = a.i("x2");
+                    int dy2 = a.i("y2");
+                    int steps = a.i("steps", 10);
                     try {
                         Method mDown = null;
                         Method mMove = null;
@@ -704,16 +773,16 @@ public class TestAutomationController {
                         }
                         return "DRAGGED: (" + dx1 + "," + dy1 + ") -> (" + dx2 + "," + dy2 + ")";
                     } catch (Exception e) {
-                        return "ERROR_DRAG: " + e.getMessage();
+                        throw CommandError.wrap("ERROR_DRAG", e);
                     }
 
                 case "resizegui":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
                         try {
                             ca.teamdman.sfm.client.gui.GuiCodeEditor ed = (ca.teamdman.sfm.client.gui.GuiCodeEditor) mc.currentScreen;
-                            String[] dims = arg.split("\\s+");
-                            int newW = Integer.parseInt(dims[0]);
-                            int newH = Integer.parseInt(dims[1]);
+                            // resizegui {width, height}
+                            int newW = a.i("width");
+                            int newH = a.i("height");
                             Field fW = ca.teamdman.sfm.client.gui.GuiCodeEditor.class.getDeclaredField("editorW");
                             Field fH = ca.teamdman.sfm.client.gui.GuiCodeEditor.class.getDeclaredField("editorH");
                             fW.setAccessible(true);
@@ -723,10 +792,10 @@ public class TestAutomationController {
                             ed.updateLayout();
                             return "RESIZED_GUI: " + newW + "x" + newH;
                         } catch (Exception e) {
-                            return "ERROR_RESIZE_GUI: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_RESIZE_GUI", e);
                         }
                     }
-                    return "NOT_CODE_EDITOR";
+                    throw new CommandError("WRONG_GUI", "the code editor is not open");
 
                 case "autoindent":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
@@ -735,10 +804,10 @@ public class TestAutomationController {
                             ed.autoIndentAll();
                             return "AUTOINDENTED";
                         } catch (Exception e) {
-                            return "ERROR_AUTOINDENT: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_AUTOINDENT", e);
                         }
                     }
-                    return "NOT_CODE_EDITOR";
+                    throw new CommandError("WRONG_GUI", "the code editor is not open");
 
                 case "getcode":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
@@ -747,12 +816,15 @@ public class TestAutomationController {
                             Field fLines = ca.teamdman.sfm.client.gui.GuiCodeEditor.class.getDeclaredField("lines");
                             fLines.setAccessible(true);
                             java.util.List<String> edLines = (java.util.List<String>) fLines.get(ed);
-                            return String.join("\n", edLines);
+                            // getcode: {code}
+                            JsonObject code = new JsonObject();
+                            code.addProperty("code", String.join("\n", edLines));
+                            return code.toString();
                         } catch (Exception e) {
-                            return "ERROR_GET_CODE: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_GET_CODE", e);
                         }
                     }
-                    return "NOT_CODE_EDITOR";
+                    throw new CommandError("WRONG_GUI", "the code editor is not open");
 
                 case "setcode":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.client.gui.GuiCodeEditor) {
@@ -763,7 +835,8 @@ public class TestAutomationController {
                             fLines.setAccessible(true);
                             java.util.List<String> edLines = (java.util.List<String>) fLines.get(ed);
                             edLines.clear();
-                            String codeText = arg.replace("\\n", "\n");
+                            // setcode {code}
+                            String codeText = a.str("code");
                             edLines.addAll(java.util.Arrays.asList(codeText.split("\n", -1)));
                             Field fCursorLine = ca.teamdman.sfm.client.gui.GuiCodeEditor.class
                                 .getDeclaredField("cursorLine");
@@ -780,17 +853,17 @@ public class TestAutomationController {
                             m.invoke(ed);
                             return "CODE_SET: " + edLines.size() + " lines";
                         } catch (Exception e) {
-                            return "ERROR_SET_CODE: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_SET_CODE", e);
                         }
                     }
-                    return "NOT_CODE_EDITOR";
+                    throw new CommandError("WRONG_GUI", "the code editor is not open");
 
                 case "clickslot":
                     if (mc.thePlayer != null && mc.thePlayer.openContainer != null) {
-                        String[] sParts = arg.split("\\s+");
-                        int slotId = Integer.parseInt(sParts[0]);
-                        int mouseBtn = sParts.length > 1 ? Integer.parseInt(sParts[1]) : 0;
-                        int clickMode = sParts.length > 2 ? Integer.parseInt(sParts[2]) : 0;
+                        // clickslot {slot, [button], [mode]}
+                        int slotId = a.i("slot");
+                        int mouseBtn = a.i("button", 0);
+                        int clickMode = a.i("mode", 0);
                         mc.playerController.windowClick(
                             mc.thePlayer.openContainer.windowId,
                             slotId,
@@ -799,9 +872,11 @@ public class TestAutomationController {
                             mc.thePlayer);
                         return "CLICKED_SLOT: " + slotId + " (btn " + mouseBtn + ", mode " + clickMode + ")";
                     }
-                    return "NO_OPEN_CONTAINER";
+                    throw new CommandError("NO_OPEN_CONTAINER", "no container is open");
 
-                case "clickbutton":
+                case "clickbutton": {
+                    // clickbutton {button}: a button's id or a substring of its label
+                    String which = a.scalar("button");
                     if (mc.currentScreen != null) {
                         try {
                             java.lang.reflect.Field f = GuiScreen.class.getDeclaredField("buttonList");
@@ -810,11 +885,9 @@ public class TestAutomationController {
                                 .get(mc.currentScreen);
                             for (net.minecraft.client.gui.GuiButton b : btns) {
                                 if (String.valueOf(b.id)
-                                    .equals(arg.trim())
+                                    .equals(which)
                                     || b.displayString.toLowerCase()
-                                        .contains(
-                                            arg.trim()
-                                                .toLowerCase())) {
+                                        .contains(which.toLowerCase())) {
                                     java.lang.reflect.Method m = GuiScreen.class
                                         .getDeclaredMethod("actionPerformed", net.minecraft.client.gui.GuiButton.class);
                                     m.setAccessible(true);
@@ -822,12 +895,13 @@ public class TestAutomationController {
                                     return "CLICKED_BUTTON: " + b.id + " (" + b.displayString + ")";
                                 }
                             }
-                            return "BUTTON_NOT_FOUND: " + arg;
+                            throw new CommandError("NOT_FOUND", "no button matching '" + which + "'");
                         } catch (Exception e) {
-                            return "ERROR_CLICK_BUTTON: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_CLICK_BUTTON", e);
                         }
                     }
-                    return "NO_ACTIVE_GUI";
+                    throw new CommandError("NO_ACTIVE_GUI", "no GUI is open");
+                }
 
                 case "clicklabel":
                     if (mc.currentScreen instanceof ca.teamdman.sfm.common.gui.GuiLabelGun) {
@@ -841,7 +915,7 @@ public class TestAutomationController {
                             for (java.util.Map.Entry<net.minecraft.client.gui.GuiButton, String> entry : map
                                 .entrySet()) {
                                 if (entry.getValue()
-                                    .equalsIgnoreCase(arg.trim())) {
+                                    .equalsIgnoreCase(a.str("label"))) {
                                     java.lang.reflect.Method m = GuiScreen.class
                                         .getDeclaredMethod("actionPerformed", net.minecraft.client.gui.GuiButton.class);
                                     m.setAccessible(true);
@@ -849,38 +923,36 @@ public class TestAutomationController {
                                     return "CLICKED_LABEL: " + entry.getValue();
                                 }
                             }
-                            return "LABEL_NOT_FOUND: " + arg;
+                            throw new CommandError("NOT_FOUND", "no label button '" + a.str("label") + "'");
                         } catch (Exception e) {
-                            return "ERROR_CLICK_LABEL: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_CLICK_LABEL", e);
                         }
                     }
-                    return "NOT_LABEL_GUN_GUI";
+                    throw new CommandError("WRONG_GUI", "the label gun GUI is not open");
 
                 case "look":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    String[] lookCoords = arg.split("\\s+");
-                    mc.thePlayer.rotationYaw = Float.parseFloat(lookCoords[0]);
-                    if (lookCoords.length > 1) {
-                        mc.thePlayer.rotationPitch = Float.parseFloat(lookCoords[1]);
-                    }
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    // look {yaw, [pitch]}
+                    mc.thePlayer.rotationYaw = (float) a.d("yaw");
+                    mc.thePlayer.rotationPitch = (float) a.d("pitch", mc.thePlayer.rotationPitch);
                     return "LOOK_SET: yaw=" + mc.thePlayer.rotationYaw + " pitch=" + mc.thePlayer.rotationPitch;
 
                 case "teleport":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    String[] tpCoords = arg.split("\\s+");
-                    double tx = Double.parseDouble(tpCoords[0]);
-                    double ty = Double.parseDouble(tpCoords[1]);
-                    double tz = Double.parseDouble(tpCoords[2]);
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    // teleport {x, y, z}
+                    double tx = a.d("x");
+                    double ty = a.d("y");
+                    double tz = a.d("z");
                     mc.thePlayer.setPositionAndUpdate(tx, ty, tz);
                     return "TELEPORTED: " + tx + ", " + ty + ", " + tz;
 
                 case "rightclickblock":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    String[] rCoords = arg.split("\\s+");
-                    int rx = Integer.parseInt(rCoords[0]);
-                    int ry = Integer.parseInt(rCoords[1]);
-                    int rz = Integer.parseInt(rCoords[2]);
-                    int rside = rCoords.length > 3 ? Integer.parseInt(rCoords[3]) : 1;
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    // rightclickblock {x, y, z, [side]}
+                    int rx = a.i("x");
+                    int ry = a.i("y");
+                    int rz = a.i("z");
+                    int rside = a.i("side", 1);
                     boolean rsuccess = mc.playerController.onPlayerRightClick(
                         mc.thePlayer,
                         mc.theWorld,
@@ -893,12 +965,12 @@ public class TestAutomationController {
                     return "RIGHT_CLICK_BLOCK: " + rx + "," + ry + "," + rz + " (side " + rside + ") -> " + rsuccess;
 
                 case "leftclickblock":
-                    if (mc.thePlayer == null) return "ERROR: Player is null";
-                    String[] lCoords = arg.split("\\s+");
-                    int lx = Integer.parseInt(lCoords[0]);
-                    int ly = Integer.parseInt(lCoords[1]);
-                    int lz = Integer.parseInt(lCoords[2]);
-                    int lside = lCoords.length > 3 ? Integer.parseInt(lCoords[3]) : 1;
+                    if (mc.thePlayer == null) throw CommandError.of("ERROR: Player is null");
+                    // leftclickblock {x, y, z, [side]}
+                    int lx = a.i("x");
+                    int ly = a.i("y");
+                    int lz = a.i("z");
+                    int lside = a.i("side", 1);
                     mc.playerController.clickBlock(lx, ly, lz, lside);
                     return "LEFT_CLICK_BLOCK: " + lx + "," + ly + "," + lz + " (side " + lside + ")";
 
@@ -906,7 +978,8 @@ public class TestAutomationController {
                     if (mc.guiAchievement != null) {
                         mc.guiAchievement.func_146257_b();
                     }
-                    String destPath = arg.trim();
+                    // screenshot {[path]}
+                    String destPath = a.str("path", "");
                     File dest = destPath.isEmpty() ? new File(mc.mcDataDir, "screenshots/test.png")
                         : new File(destPath);
                     if (dest.getParentFile() != null) dest.getParentFile()
@@ -926,20 +999,20 @@ public class TestAutomationController {
                                 dest.toPath(),
                                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                         } catch (Exception e) {
-                            return "ERROR_MOVE: " + e.getMessage();
+                            throw CommandError.wrap("ERROR_MOVE", e);
                         }
                     }
                     return "SCREENSHOT_SAVED: " + dest.getAbsolutePath();
 
                 default:
-                    return "UNKNOWN_COMMAND: " + cmd;
+                    throw new CommandError("UNKNOWN_COMMAND", "no command '" + cmd + "'");
             }
         });
 
         try {
             return future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
-            return "TIMEOUT_OR_ERROR: " + e.getMessage();
+            throw CommandError.wrap("TIMEOUT_OR_ERROR", e);
         }
     }
 
