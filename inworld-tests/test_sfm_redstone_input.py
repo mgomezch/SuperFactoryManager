@@ -47,7 +47,7 @@ def run_test():
     print("Label rcv:", client.sfm_label(x=30, y=6, z=420, label="rcv", bx=32, by=6, bz=420))
 
     # Program: Only transfer if redstone > 0
-    program = "EVERY 20 TICKS DO\n  IF REDSTONE > 0 THEN\n    INPUT FROM src\n    OUTPUT TO dst\n  END\nEND\n"
+    program = "EVERY 20 TICKS DO\n  IF REDSTONE > 0 THEN\n    INPUT FROM \"src\"\n    OUTPUT TO \"dst\"\n  END\nEND\n"
     print("Setting program conditional on REDSTONE > 0...")
     print(client.sfm_program(x=30, y=6, z=420, code=program))
 

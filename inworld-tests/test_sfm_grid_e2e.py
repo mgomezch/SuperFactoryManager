@@ -195,7 +195,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="chest", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Basic\"\nEVERY 20 TICKS DO\n  INPUT 32 FROM drawer\n  OUTPUT TO chest\nEND"
+                code = "NAME \"Basic\"\nEVERY 20 TICKS DO\n  INPUT 32 FROM \"drawer\"\n  OUTPUT TO \"chest\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 1 failed to compile: {res_p}"
 
@@ -207,7 +207,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Retain\"\nEVERY 20 TICKS DO\n  INPUT RETAIN 16 FROM src\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Retain\"\nEVERY 20 TICKS DO\n  INPUT RETAIN 16 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 2 failed to compile: {res_p}"
 
@@ -219,7 +219,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Compound\"\nEVERY 20 TICKS DO\n  INPUT 20 RETAIN 20 FROM src\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Compound\"\nEVERY 20 TICKS DO\n  INPUT 20 RETAIN 20 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 3 failed to compile: {res_p}"
 
@@ -233,7 +233,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Filter\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot FROM src\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Filter\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot FROM \"src\"\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 4 failed to compile: {res_p}"
 
@@ -247,7 +247,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Exclusion\"\nEVERY 20 TICKS DO\n  INPUT EXCEPT minecraft:dirt FROM src\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Exclusion\"\nEVERY 20 TICKS DO\n  INPUT EXCEPT minecraft:dirt FROM \"src\"\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 5 failed to compile: {res_p}"
 
@@ -261,7 +261,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Slots\"\nEVERY 20 TICKS DO\n  INPUT FROM src SLOTS 0, 2\n  OUTPUT TO dst SLOTS 4-5\nEND"
+                code = "NAME \"Slots\"\nEVERY 20 TICKS DO\n  INPUT FROM \"src\" SLOTS 0, 2\n  OUTPUT TO \"dst\" SLOTS 4-5\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 6 failed to compile: {res_p}"
 
@@ -274,7 +274,7 @@ def run_grid_test():
                 harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="chestA", bx=gx-1, by=5, bz=gz+1)
                 harness.sfm_label(x=gx, y=5, z=gz, label="chestB", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"RoundRobin\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM drawer\n  OUTPUT TO chestA, chestB ROUND ROBIN BY LABEL\nEND"
+                code = "NAME \"RoundRobin\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM \"drawer\"\n  OUTPUT TO \"chestA\", \"chestB\" ROUND ROBIN BY LABEL\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 7 failed to compile: {res_p}"
 
@@ -286,7 +286,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Condition\"\nEVERY 20 TICKS DO\n  IF src HAS > 30 THEN\n    INPUT 10 FROM src\n    OUTPUT TO dst\n  END\nEND"
+                code = "NAME \"Condition\"\nEVERY 20 TICKS DO\n  IF \"src\" HAS > 30 THEN\n    INPUT 10 FROM \"src\"\n    OUTPUT TO \"dst\"\n  END\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 8 failed to compile: {res_p}"
 
@@ -299,7 +299,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="chest", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"EmptySlots\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM drawer\n  OUTPUT TO EMPTY SLOTS IN chest\nEND"
+                code = "NAME \"EmptySlots\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM \"drawer\"\n  OUTPUT TO EMPTY SLOTS IN \"chest\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 9 failed to compile: {res_p}"
 
@@ -311,7 +311,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Forget\"\nEVERY 20 TICKS DO\n  INPUT 16 FROM src\n  FORGET\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Forget\"\nEVERY 20 TICKS DO\n  INPUT 16 FROM \"src\"\n  FORGET\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 10 failed to compile: {res_p}"
 
@@ -325,7 +325,7 @@ def run_grid_test():
                 harness.sfm_clear_labels(x=gx, y=5, z=gz)
                 harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
                 harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
-                code = "NAME \"Disjunction\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot OR minecraft:gold_ingot FROM src\n  OUTPUT TO dst\nEND"
+                code = "NAME \"Disjunction\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot OR minecraft:gold_ingot FROM \"src\"\n  OUTPUT TO \"dst\"\nEND"
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 11 failed to compile: {res_p}"
 
@@ -341,12 +341,12 @@ def run_grid_test():
                 code = (
                     "NAME \"DualTimers\"\n"
                     "EVERY 10 TICKS DO\n"
-                    "  INPUT 5 FROM drawer\n"
-                    "  OUTPUT TO fast\n"
+                    "  INPUT 5 FROM \"drawer\"\n"
+                    "  OUTPUT TO \"fast\"\n"
                     "END\n"
                     "EVERY 30 TICKS DO\n"
-                    "  INPUT 15 FROM drawer\n"
-                    "  OUTPUT TO slow\n"
+                    "  INPUT 15 FROM \"drawer\"\n"
+                    "  OUTPUT TO \"slow\"\n"
                     "END"
                 )
                 res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)

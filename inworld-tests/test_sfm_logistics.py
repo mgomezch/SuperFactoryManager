@@ -69,7 +69,7 @@ def build_sfm_logistics(client: HarnessClient):
     client.sfm_label(MX, MY, MZ, "b", CB_X, CB_Y, CB_Z)
 
     # Set SFM program
-    program = "EVERY 20 TICKS DO\n  INPUT FROM a\n  OUTPUT TO b\nEND\n"
+    program = "EVERY 20 TICKS DO\n  INPUT FROM \"a\"\n  OUTPUT TO \"b\"\nEND\n"
     print("Setting SFM program...")
     client.sfm_program(MX, MY, MZ, program)
 

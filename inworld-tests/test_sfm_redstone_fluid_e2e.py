@@ -214,7 +214,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         harness.sfm_label(x=x1, y=4, z=z1, label="emit", bx=x1+2, by=4, bz=z1)
-        prog1_on = "EVERY 20 TICKS DO\n  OUTPUT 15 REDSTONE LEVEL TO emit\nEND\n"
+        prog1_on = "EVERY 20 TICKS DO\n  OUTPUT 15 REDSTONE LEVEL TO \"emit\"\nEND\n"
         harness.sfm_program(x=x1, y=4, z=z1, code=prog1_on)
         time.sleep(1.2)
         harness.sfm_update(x=x1, y=4, z=z1)
@@ -225,7 +225,7 @@ def run_test_suite():
         assert rs_on.get("maxEmittedPower") == 15, f"Expected 15, got {rs_on}"
 
         # Turn OFF
-        prog1_off = "EVERY 20 TICKS DO\n  OUTPUT 0 REDSTONE LEVEL TO emit\nEND\n"
+        prog1_off = "EVERY 20 TICKS DO\n  OUTPUT 0 REDSTONE LEVEL TO \"emit\"\nEND\n"
         harness.sfm_program(x=x1, y=4, z=z1, code=prog1_off)
         time.sleep(1.2)
         harness.sfm_update(x=x1, y=4, z=z1)
@@ -254,7 +254,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         harness.sfm_label(x=x2, y=4, z=z2, label="emit", bx=x2+2, by=4, bz=z2)
-        prog2 = "EVERY 20 TICKS DO\n  OUTPUT 7 REDSTONE LEVEL TO emit\nEND\n"
+        prog2 = "EVERY 20 TICKS DO\n  OUTPUT 7 REDSTONE LEVEL TO \"emit\"\nEND\n"
         harness.sfm_program(x=x2, y=4, z=z2, code=prog2)
         time.sleep(1.2)
         harness.sfm_update(x=x2, y=4, z=z2)
@@ -283,7 +283,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         harness.sfm_label(x=x3, y=4, z=z3, label="emit", bx=x3+2, by=4, bz=z3)
-        prog3 = "EVERY 20 TICKS DO\n  OUTPUT 11 REDSTONE LEVEL TO emit TOP SIDE\nEND\n"
+        prog3 = "EVERY 20 TICKS DO\n  OUTPUT 11 REDSTONE LEVEL TO \"emit\" TOP SIDE\nEND\n"
         harness.sfm_program(x=x3, y=4, z=z3, code=prog3)
         time.sleep(1.2)
         harness.sfm_update(x=x3, y=4, z=z3)
@@ -324,7 +324,7 @@ def run_test_suite():
         harness.sfm_label(x=x4, y=4, z=z4, label="dst", bx=x4+2, by=5, bz=z4)
         harness.sfm_label(x=x4, y=4, z=z4, label="rcv", bx=x4+2, by=4, bz=z4)
 
-        prog4 = "EVERY REDSTONE PULSE DO\n  INPUT 16 FROM src\n  OUTPUT TO dst\nEND\n"
+        prog4 = "EVERY REDSTONE PULSE DO\n  INPUT 16 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x4, y=4, z=z4, code=prog4)
         time.sleep(1.2)
         harness.sfm_update(x=x4, y=4, z=z4)
@@ -389,7 +389,7 @@ def run_test_suite():
         harness.sfm_label(x=x5, y=4, z=z5, label="dst", bx=x5+2, by=5, bz=z5)
         harness.sfm_label(x=x5, y=4, z=z5, label="rcv", bx=x5+2, by=4, bz=z5)
 
-        prog5 = "EVERY 20 TICKS DO\n  IF REDSTONE LEVEL >= 8 THEN\n    INPUT 10 FROM src\n    OUTPUT TO dst\n  END\nEND\n"
+        prog5 = "EVERY 20 TICKS DO\n  IF REDSTONE LEVEL >= 8 THEN\n    INPUT 10 FROM \"src\"\n    OUTPUT TO \"dst\"\n  END\nEND\n"
         harness.sfm_program(x=x5, y=4, z=z5, code=prog5)
         time.sleep(1.2)
         harness.sfm_update(x=x5, y=4, z=z5)
@@ -442,7 +442,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         harness.sfm_label(x=x6, y=4, z=z6, label="emit", bx=x6+2, by=4, bz=z6)
-        prog6 = "EVERY 20 TICKS DO\n  OUTPUT 14 REDSTONE LEVEL TO emit\nEND\n"
+        prog6 = "EVERY 20 TICKS DO\n  OUTPUT 14 REDSTONE LEVEL TO \"emit\"\nEND\n"
         harness.sfm_program(x=x6, y=4, z=z6, code=prog6)
         time.sleep(1.2)
         harness.sfm_update(x=x6, y=4, z=z6)
@@ -486,7 +486,7 @@ def run_test_suite():
         harness.sfm_label(x=x7, y=4, z=z7, label="src", bx=x7, by=5, bz=z7)
         harness.sfm_label(x=x7, y=4, z=z7, label="dst", bx=x7+1, by=5, bz=z7)
 
-        prog7 = "EVERY 20 TICKS DO\n  INPUT 1000 fluid:water FROM src\n  OUTPUT TO dst\nEND\n"
+        prog7 = "EVERY 20 TICKS DO\n  INPUT 1000 fluid:water FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x7, y=4, z=z7, code=prog7)
         time.sleep(1.2)
         harness.sfm_update(x=x7, y=4, z=z7)
@@ -532,7 +532,7 @@ def run_test_suite():
         harness.sfm_label(x=x8, y=4, z=z8, label="src", bx=x8, by=5, bz=z8)
         harness.sfm_label(x=x8, y=4, z=z8, label="dst", bx=x8+1, by=5, bz=z8)
 
-        prog8 = "EVERY 20 TICKS DO\n  INPUT 2500 fluid:lava FROM src\n  OUTPUT TO dst\nEND\n"
+        prog8 = "EVERY 20 TICKS DO\n  INPUT 2500 fluid:lava FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x8, y=4, z=z8, code=prog8)
         time.sleep(1.2)
 
@@ -579,7 +579,7 @@ def run_test_suite():
         harness.sfm_label(x=x9, y=4, z=z9, label="src", bx=x9, by=5, bz=z9)
         harness.sfm_label(x=x9, y=4, z=z9, label="dst", bx=x9+1, by=5, bz=z9)
 
-        prog9 = "EVERY 20 TICKS DO\n  INPUT RETAIN 2000 fluid:water FROM src\n  OUTPUT TO dst\nEND\n"
+        prog9 = "EVERY 20 TICKS DO\n  INPUT RETAIN 2000 fluid:water FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x9, y=4, z=z9, code=prog9)
         time.sleep(1.2)
 
@@ -638,11 +638,11 @@ def run_test_suite():
 
         prog10 = (
             "EVERY 20 TICKS DO\n"
-            "  INPUT 1000 fluid:lava FROM src\n"
-            "  OUTPUT TO dst_l\n"
+            "  INPUT 1000 fluid:lava FROM \"src\"\n"
+            "  OUTPUT TO \"dst_l\"\n"
             "  FORGET\n"
-            "  INPUT 2000 fluid:water FROM src\n"
-            "  OUTPUT TO dst_w\n"
+            "  INPUT 2000 fluid:water FROM \"src\"\n"
+            "  OUTPUT TO \"dst_w\"\n"
             "END\n"
         )
         harness.sfm_program(x=x10, y=4, z=z10, code=prog10)
@@ -687,7 +687,7 @@ def run_test_suite():
         harness.sfm_label(x=x11, y=4, z=z11, label="src", bx=x11, by=5, bz=z11)
         harness.sfm_label(x=x11, y=4, z=z11, label="trash", bx=x11+1, by=5, bz=z11)
 
-        prog11 = "EVERY 20 TICKS DO\n  INPUT 4000 fluid:water FROM src\n  OUTPUT TO trash\nEND\n"
+        prog11 = "EVERY 20 TICKS DO\n  INPUT 4000 fluid:water FROM \"src\"\n  OUTPUT TO \"trash\"\nEND\n"
         harness.sfm_program(x=x11, y=4, z=z11, code=prog11)
         time.sleep(1.2)
 
@@ -728,9 +728,9 @@ def run_test_suite():
 
         prog12 = (
             "EVERY 20 TICKS DO\n"
-            "  IF src HAS > 3000 fluid:water THEN\n"
-            "    INPUT 1500 fluid:water FROM src\n"
-            "    OUTPUT TO dst\n"
+            "  IF \"src\" HAS > 3000 fluid:water THEN\n"
+            "    INPUT 1500 fluid:water FROM \"src\"\n"
+            "    OUTPUT TO \"dst\"\n"
             "  END\n"
             "END\n"
         )

@@ -80,7 +80,7 @@ def test_sfm_redstone(client: HarnessClient):
     client.wait(5)
 
     # 1. Program to emit 15
-    program_on = "EVERY 20 TICKS DO\n  OUTPUT 15 REDSTONE LEVEL TO emit\nEND\n"
+    program_on = "EVERY 20 TICKS DO\n  OUTPUT 15 REDSTONE LEVEL TO \"emit\"\nEND\n"
     print("Setting SFM program: OUTPUT 15 REDSTONE LEVEL...")
     client.sfm_program(MX, MY, MZ, program_on)
 
@@ -99,7 +99,7 @@ def test_sfm_redstone(client: HarnessClient):
     print("[✓] Redstone ON (level 15) verified!")
 
     # 2. Program to emit 0
-    program_off = "EVERY 20 TICKS DO\n  OUTPUT 0 REDSTONE LEVEL TO emit\nEND\n"
+    program_off = "EVERY 20 TICKS DO\n  OUTPUT 0 REDSTONE LEVEL TO \"emit\"\nEND\n"
     print("Setting SFM program: OUTPUT 0 REDSTONE LEVEL...")
     client.sfm_program(MX, MY, MZ, program_off)
 

@@ -168,7 +168,7 @@ def run_doublechest_suite():
         harness.sfm_label(x=x1, y=4, z=z1, label="src", bx=x1, by=5, bz=z1)
         harness.sfm_label(x=x1, y=4, z=z1, label="dst", bx=x1, by=5, bz=z1+2)
 
-        prog1 = "EVERY 20 TICKS DO\n  INPUT 42 FROM src\n  OUTPUT TO dst\nEND\n"
+        prog1 = "EVERY 20 TICKS DO\n  INPUT 42 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x1, y=4, z=z1, code=prog1)
         time.sleep(1.2)
         harness.sfm_update(x=x1, y=4, z=z1)
@@ -213,7 +213,7 @@ def run_doublechest_suite():
         harness.sfm_label(x=x2+1, y=4, z=z2, label="src", bx=x2+1, by=5, bz=z2)
         harness.sfm_label(x=x2+1, y=4, z=z2, label="dst", bx=x2+1, by=5, bz=z2+2)
 
-        prog2 = "EVERY 20 TICKS DO\n  INPUT 35 FROM src\n  OUTPUT TO dst\nEND\n"
+        prog2 = "EVERY 20 TICKS DO\n  INPUT 35 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x2+1, y=4, z=z2, code=prog2)
         time.sleep(1.2)
         harness.sfm_update(x=x2+1, y=4, z=z2)
@@ -262,7 +262,7 @@ def run_doublechest_suite():
         harness.sfm_label(x=x3, y=4, z=z3, label="dst", bx=x3, by=5, bz=z3+2)
 
         # Transfer 10 items. If deduplication failed, it would gather slots twice and move 20 items!
-        prog3 = "EVERY 20 TICKS DO\n  INPUT 10 FROM dchest\n  OUTPUT TO dst\nEND\n"
+        prog3 = "EVERY 20 TICKS DO\n  INPUT 10 FROM \"dchest\"\n  OUTPUT TO \"dst\"\nEND\n"
         harness.sfm_program(x=x3, y=4, z=z3, code=prog3)
         time.sleep(1.2)
         harness.sfm_update(x=x3, y=4, z=z3)
@@ -311,7 +311,7 @@ def run_doublechest_suite():
         harness.sfm_label(x=x4, y=4, z=z4, label="dchest", bx=x4, by=5, bz=z4)
 
         # Output to dchest. Since Half 1 is 100% full, it must overflow into Half 2!
-        prog4 = "EVERY 20 TICKS DO\n  INPUT 64 FROM src\n  OUTPUT TO dchest\nEND\n"
+        prog4 = "EVERY 20 TICKS DO\n  INPUT 64 FROM \"src\"\n  OUTPUT TO \"dchest\"\nEND\n"
         harness.sfm_program(x=x4, y=4, z=z4, code=prog4)
         time.sleep(1.2)
         harness.sfm_update(x=x4, y=4, z=z4)
@@ -369,7 +369,7 @@ def run_doublechest_suite():
         harness.sfm_label(x=x5, y=4, z=z5, label="result", bx=x5+2, by=5, bz=z5+2)
 
         # Subtest 5A: IF dchest HAS >= 40 iron_ingot (Split 20 + 20 = 40) -> transfer gold
-        prog5a = "EVERY 20 TICKS DO\n  IF dchest HAS >= 40 iron_ingot THEN\n    INPUT 1 gold_ingot FROM feed\n    OUTPUT TO result\n  END\nEND\n"
+        prog5a = "EVERY 20 TICKS DO\n  IF \"dchest\" HAS >= 40 iron_ingot THEN\n    INPUT 1 gold_ingot FROM \"feed\"\n    OUTPUT TO \"result\"\n  END\nEND\n"
         res_p5a = harness.sfm_program(x=x5, y=4, z=z5, code=prog5a)
         print(f"[Station 5A] sfm_program response: {res_p5a}")
         time.sleep(1.2)
@@ -382,7 +382,7 @@ def run_doublechest_suite():
 
         # Subtest 5B: IF dchest HAS > 40 iron_ingot (Should evaluate FALSE) -> transfer diamond
         # If double-counting bug existed, count would be 80 and this would fire!
-        prog5b = "EVERY 20 TICKS DO\n  IF dchest HAS > 40 iron_ingot THEN\n    INPUT 10 diamond FROM feed\n    OUTPUT TO result\n  END\nEND\n"
+        prog5b = "EVERY 20 TICKS DO\n  IF \"dchest\" HAS > 40 iron_ingot THEN\n    INPUT 10 diamond FROM \"feed\"\n    OUTPUT TO \"result\"\n  END\nEND\n"
         res_p5b = harness.sfm_program(x=x5, y=4, z=z5, code=prog5b)
         print(f"[Station 5B] sfm_program response: {res_p5b}")
         time.sleep(1.2)
@@ -394,7 +394,7 @@ def run_doublechest_suite():
         assert res5b == 0, f"Expected 0 diamonds in result, got {res5b} (double counting occurred!)"
 
         # Subtest 5C: IF dchest HAS EQ 40 iron_ingot (Exact match using EQ) -> transfer emerald
-        prog5c = "EVERY 20 TICKS DO\n  IF dchest HAS EQ 40 iron_ingot THEN\n    INPUT 2 emerald FROM feed\n    OUTPUT TO result\n  END\nEND\n"
+        prog5c = "EVERY 20 TICKS DO\n  IF \"dchest\" HAS EQ 40 iron_ingot THEN\n    INPUT 2 emerald FROM \"feed\"\n    OUTPUT TO \"result\"\n  END\nEND\n"
         res_p5c = harness.sfm_program(x=x5, y=4, z=z5, code=prog5c)
         print(f"[Station 5C] sfm_program response: {res_p5c}")
         time.sleep(1.2)
@@ -447,11 +447,11 @@ def run_doublechest_suite():
         # Program: Extract SLOTS 27-53 into dst_half2, then FORGET and extract SLOTS 0-26 into dst_half1
         prog6 = (
             "EVERY 20 TICKS DO\n"
-            "  INPUT 16 FROM dchest SLOTS 27-53\n"
-            "  OUTPUT TO dst_half2\n"
+            "  INPUT 16 FROM \"dchest\" SLOTS 27-53\n"
+            "  OUTPUT TO \"dst_half2\"\n"
             "  FORGET\n"
-            "  INPUT 16 FROM dchest SLOTS 0-26\n"
-            "  OUTPUT TO dst_half1\n"
+            "  INPUT 16 FROM \"dchest\" SLOTS 0-26\n"
+            "  OUTPUT TO \"dst_half1\"\n"
             "END\n"
         )
         harness.sfm_program(x=x6, y=4, z=z6, code=prog6)

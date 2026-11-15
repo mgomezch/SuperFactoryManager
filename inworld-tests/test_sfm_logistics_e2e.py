@@ -123,12 +123,12 @@ def run_test():
         program_code = (
             "NAME \"Item Logistics\"\n"
             "EVERY 20 TICKS DO\n"
-            "  INPUT 64 FROM drawer\n"
-            "  OUTPUT TO chest\n"
+            "  INPUT 64 FROM \"drawer\"\n"
+            "  OUTPUT TO \"chest\"\n"
             "END\n"
             "EVERY 200 TICKS DO\n"
-            "  INPUT FROM chest\n"
-            "  OUTPUT TO trash\n"
+            "  INPUT FROM \"chest\"\n"
+            "  OUTPUT TO \"trash\"\n"
             "END\n"
         )
         print("[*] Programming Manager with dual-interval logistics routine...")
