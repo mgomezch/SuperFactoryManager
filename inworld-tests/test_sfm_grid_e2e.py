@@ -35,17 +35,15 @@ from typing import Dict, Any, List, Optional
 from nhdev import NH_DEV_ROOT as ROOT_DIR
 
 from tools.agentharness import HarnessClient
-from tools.sfm_client import SfmClient
 from tools.bot.world_manager import WorldSandbox
 from tools.mcfleet.client import FleetClient
-from tools.mcfleet.schema import InstanceSpec, DisplayMode
+from tools.runner_instance import ensure_sfm_instance_running
 
 OUTPUT_DIR = ROOT_DIR / "output" / "sfm_grid"
 ARTIFACTS_DIR = Path("/home/mgomezch/.gemini/antigravity/brain/a95f94f4-9edd-4aba-8218-d471d3db8067")
 PRISM_INSTANCE_DIR = Path.home() / ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/GTNH-2.9-sfm-dev/.minecraft"
 
 HARNESS_PORT = 25572
-SFM_PORT = 25573
 
 
 def get_saves_dir(client: FleetClient, harness: Optional[HarnessClient] = None, inst_name: str = "sfm-test-runner") -> Path:
@@ -70,54 +68,6 @@ def get_saves_dir(client: FleetClient, harness: Optional[HarnessClient] = None, 
     return PRISM_INSTANCE_DIR / "saves"
 
 
-def ensure_sfm_instance_running():
-    sfm_client = SfmClient(port=SFM_PORT)
-    harness_client = HarnessClient(port=HARNESS_PORT)
-
-    if sfm_client.ping() and harness_client.ping():
-        print(f"[+] SFM test instance is already running on ports {HARNESS_PORT} & {SFM_PORT}")
-        try:
-            res = harness_client.exitworld()
-            print(f"[+] World exited to initial menu: {res}")
-        except Exception:
-            pass
-        return
-
-    print("[*] Launching SFM test instance via FleetClient...")
-    client = FleetClient()
-    spec = InstanceSpec(
-        name="sfm-test-runner",
-        template="nix-gtnh-sfm-dev",
-        ephemeral=True,
-        display_mode=DisplayMode.HEADLESS,
-        display_socket="wayland-99",
-        port=HARNESS_PORT,
-        memory_min="4096m",
-        memory_max="8192m",
-        jvm_args=[
-            "-Dsfm.testHarness=true",
-            f"-Dsfm.harness.port={SFM_PORT}",
-        ],
-    )
-    inst = client.launch(spec, auto_start=True)
-    print(f"[+] Started instance '{spec.name}' (PID {inst.status.pid}). Waiting for controllers...")
-
-    start_t = time.time()
-    while time.time() - start_t < 240:
-        if sfm_client.ping() and harness_client.ping():
-            try:
-                st = harness_client.state()
-                if "GuiCustom" in st or "GuiMainMenu" in st or "MAIN_MENU" in st or "IN_WORLD" in st:
-                    print(f"[+] Both controllers ready after {time.time() - start_t:.1f}s ({st})!")
-                    return
-            except Exception:
-                pass
-        time.sleep(3)
-        print(f"[*] Waiting for game initialization... ({int(time.time() - start_t)}s elapsed)")
-
-    raise RuntimeError("Timed out waiting for SFM test instance controllers to start")
-
-
 def get_inv_items(harness: HarnessClient, x: int, y: int, z: int) -> List[Dict[str, Any]]:
     raw = harness.container_info(x=x, y=y, z=z)
     try:
@@ -139,7 +89,6 @@ def run_grid_test():
     client = FleetClient()
     ensure_sfm_instance_running()
 
-    sfm = SfmClient(port=SFM_PORT)
     harness = HarnessClient(port=HARNESS_PORT)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,7 +108,7 @@ def run_grid_test():
 
     with sandbox:
         print(f"[*] Launching world '{world_name}'...")
-        res = sfm.autoworld(name=world_name)
+        res = harness.autoworld(name=world_name)
         print(f"[<] {res}")
 
         print("[*] Waiting for player to enter world...")
@@ -177,19 +126,19 @@ def run_grid_test():
             raise RuntimeError(f"Failed to enter world, status: {harness.status()}")
 
         time.sleep(1.5)
-        sfm.closegui()
+        harness.close_gui()
         time.sleep(0.5)
 
         # Baseline game settings
         print("[*] Setting world environment...")
-        sfm.chat(message="/gamemode 1")
-        sfm.chat(message="/gamerule doDaylightCycle false")
-        sfm.chat(message="/gamerule doMobSpawning false")
-        sfm.chat(message="/time set 6000")
-        sfm.chat(message="/weather clear 999999")
-        sfm.chat(message="/difficulty 0")
-        sfm.chat(message="/cofh killall *")
-        sfm.chat(message="/setworldspawn 72 4 48")
+        harness.chat(message="/gamemode 1")
+        harness.chat(message="/gamerule doDaylightCycle false")
+        harness.chat(message="/gamerule doMobSpawning false")
+        harness.chat(message="/time set 6000")
+        harness.chat(message="/weather clear 999999")
+        harness.chat(message="/difficulty 0")
+        harness.chat(message="/cofh killall *")
+        harness.chat(message="/setworldspawn 72 4 48")
         time.sleep(0.5)
 
         # Define 12 Stations on 48-block grid
@@ -226,7 +175,7 @@ def run_grid_test():
             print(f"[*] Erecting Station {st['id']} ({st['title']}) at ({gx}, 5, {gz})...")
 
             # Teleport player above station to load chunk
-            sfm.teleport(x=gx, y=7, z=gz)
+            harness.teleport(x=gx, y=7, z=gz)
             time.sleep(0.15)
 
             # 7x7 quartz foundation at y=4
@@ -243,11 +192,11 @@ def run_grid_test():
                 # Creative Drawer at gz+2, Chest at gx+1, gz+1
                 harness.setup_vending_drawer(x=gx, y=5, z=gz+2, item="minecraft:cobblestone", meta=0, dir=2)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="drawer", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="chest", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="chest", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Basic\"\nEVERY 20 TICKS DO\n  INPUT 32 FROM drawer\n  OUTPUT TO chest\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 1 failed to compile: {res_p}"
 
             elif sid == "02_retain_limit":
@@ -255,11 +204,11 @@ def run_grid_test():
                 harness.set_block(gx, 5, gz + 2, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:cobblestone", count=64, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Retain\"\nEVERY 20 TICKS DO\n  INPUT RETAIN 16 FROM src\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 2 failed to compile: {res_p}"
 
             elif sid == "03_compound_limit":
@@ -267,11 +216,11 @@ def run_grid_test():
                 harness.set_block(gx, 5, gz + 2, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:cobblestone", count=50, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Compound\"\nEVERY 20 TICKS DO\n  INPUT 20 RETAIN 20 FROM src\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 3 failed to compile: {res_p}"
 
             elif sid == "04_resource_filter":
@@ -281,11 +230,11 @@ def run_grid_test():
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:iron_ingot", count=32, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=1, item="minecraft:gold_ingot", count=32, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=2, item="minecraft:cobblestone", count=32, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Filter\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot FROM src\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 4 failed to compile: {res_p}"
 
             elif sid == "05_resource_exclusion":
@@ -295,11 +244,11 @@ def run_grid_test():
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:cobblestone", count=20, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=1, item="minecraft:stone", count=20, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=2, item="minecraft:dirt", count=20, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Exclusion\"\nEVERY 20 TICKS DO\n  INPUT EXCEPT minecraft:dirt FROM src\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 5 failed to compile: {res_p}"
 
             elif sid == "06_slot_restriction":
@@ -309,11 +258,11 @@ def run_grid_test():
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:redstone", count=16, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=1, item="minecraft:coal", count=16, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=2, item="minecraft:glowstone_dust", count=16, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Slots\"\nEVERY 20 TICKS DO\n  INPUT FROM src SLOTS 0, 2\n  OUTPUT TO dst SLOTS 4-5\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 6 failed to compile: {res_p}"
 
             elif sid == "07_round_robin":
@@ -321,12 +270,12 @@ def run_grid_test():
                 harness.setup_vending_drawer(x=gx, y=5, z=gz+2, item="minecraft:cobblestone", meta=0, dir=2)
                 harness.set_block(gx - 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="drawer", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="chestA", tx=gx-1, ty=5, tz=gz+1)
-                sfm.setlabel(x=gx, y=5, z=gz, label="chestB", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="chestA", bx=gx-1, by=5, bz=gz+1)
+                harness.sfm_label(x=gx, y=5, z=gz, label="chestB", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"RoundRobin\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM drawer\n  OUTPUT TO chestA, chestB ROUND ROBIN BY LABEL\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 7 failed to compile: {res_p}"
 
             elif sid == "08_conditional_logic":
@@ -334,11 +283,11 @@ def run_grid_test():
                 harness.set_block(gx, 5, gz + 2, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:cobblestone", count=40, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Condition\"\nEVERY 20 TICKS DO\n  IF src HAS > 30 THEN\n    INPUT 10 FROM src\n    OUTPUT TO dst\n  END\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 8 failed to compile: {res_p}"
 
             elif sid == "09_empty_slots":
@@ -347,11 +296,11 @@ def run_grid_test():
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_container_slot(x=gx+1, y=5, z=gz+1, slot=0, item="minecraft:cobblestone", count=5, damage=0)
                 harness.set_container_slot(x=gx+1, y=5, z=gz+1, slot=1, item="minecraft:cobblestone", count=5, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="drawer", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="chest", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="chest", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"EmptySlots\"\nEVERY 20 TICKS DO\n  INPUT 10 FROM drawer\n  OUTPUT TO EMPTY SLOTS IN chest\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 9 failed to compile: {res_p}"
 
             elif sid == "10_forget_statement":
@@ -359,11 +308,11 @@ def run_grid_test():
                 harness.set_block(gx, 5, gz + 2, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:cobblestone", count=32, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Forget\"\nEVERY 20 TICKS DO\n  INPUT 16 FROM src\n  FORGET\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 10 failed to compile: {res_p}"
 
             elif sid == "11_disjunction_filter":
@@ -373,11 +322,11 @@ def run_grid_test():
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=0, item="minecraft:iron_ingot", count=10, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=1, item="minecraft:gold_ingot", count=10, damage=0)
                 harness.set_container_slot(x=gx, y=5, z=gz+2, slot=2, item="minecraft:diamond", count=10, damage=0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="src", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="dst", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="src", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="dst", bx=gx+1, by=5, bz=gz+1)
                 code = "NAME \"Disjunction\"\nEVERY 20 TICKS DO\n  INPUT minecraft:iron_ingot OR minecraft:gold_ingot FROM src\n  OUTPUT TO dst\nEND"
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 11 failed to compile: {res_p}"
 
             elif sid == "12_dual_timers":
@@ -385,10 +334,10 @@ def run_grid_test():
                 harness.setup_vending_drawer(x=gx, y=5, z=gz+2, item="minecraft:cobblestone", meta=0, dir=2)
                 harness.set_block(gx - 1, 5, gz + 1, "minecraft:chest", 0)
                 harness.set_block(gx + 1, 5, gz + 1, "minecraft:chest", 0)
-                sfm.clearlabels(x=gx, y=5, z=gz)
-                sfm.setlabel(x=gx, y=5, z=gz, label="drawer", tx=gx, ty=5, tz=gz+2)
-                sfm.setlabel(x=gx, y=5, z=gz, label="fast", tx=gx-1, ty=5, tz=gz+1)
-                sfm.setlabel(x=gx, y=5, z=gz, label="slow", tx=gx+1, ty=5, tz=gz+1)
+                harness.sfm_clear_labels(x=gx, y=5, z=gz)
+                harness.sfm_label(x=gx, y=5, z=gz, label="drawer", bx=gx, by=5, bz=gz+2)
+                harness.sfm_label(x=gx, y=5, z=gz, label="fast", bx=gx-1, by=5, bz=gz+1)
+                harness.sfm_label(x=gx, y=5, z=gz, label="slow", bx=gx+1, by=5, bz=gz+1)
                 code = (
                     "NAME \"DualTimers\"\n"
                     "EVERY 10 TICKS DO\n"
@@ -400,25 +349,25 @@ def run_grid_test():
                     "  OUTPUT TO slow\n"
                     "END"
                 )
-                res_p = sfm.programmanager(x=gx, y=5, z=gz, code=code)
+                res_p = harness.sfm_program(x=gx, y=5, z=gz, code=code, start=True)
                 assert res_p["valid"], f"Node 12 failed to compile: {res_p}"
 
             # Enable manager
-            sfm.setrunning(x=gx, y=5, z=gz, running=True)
+            harness.sfm_set_running(x=gx, y=5, z=gz, running=True)
 
         print("\n========================================================")
         print("PHASE 2: EXECUTING CONCURRENT SIMULATION TO TICK 85")
         print("========================================================")
         # Position player in the center of the grid (gx=72, gz=48) at y=10 to observe
-        sfm.teleport(x=72.0, y=12.0, z=48.0)
-        sfm.look(yaw=0, pitch=35)
+        harness.teleport(x=72.0, y=12.0, z=48.0)
+        harness.look(yaw=0, pitch=35)
         time.sleep(0.5)
 
         start_sim = time.time()
         # Advance simulation to tick 85 across all managers
         while time.time() - start_sim < 60:
-            st0 = sfm.getmanagerstatus(x=0, y=5, z=0)
-            st11 = sfm.getmanagerstatus(x=144, y=5, z=96)
+            st0 = harness.sfm_status(x=0, y=5, z=0)
+            st11 = harness.sfm_status(x=144, y=5, z=96)
             def parse_t(s):
                 try:
                     return int(json.loads(s).get("tick", 0))
@@ -567,24 +516,24 @@ def run_grid_test():
             gx = st["gx"]
             gz = st["gz"]
             sid = st["id"]
-            sfm.closegui()
+            harness.close_gui()
             time.sleep(0.1)
             # Teleport close to station for 3D perspective
-            sfm.teleport(x=gx-2.5, y=7.5, z=gz-2.5)
-            sfm.look(yaw=-45, pitch=25)
+            harness.teleport(x=gx-2.5, y=7.5, z=gz-2.5)
+            harness.look(yaw=-45, pitch=25)
             time.sleep(0.3)
             img_path = OUTPUT_DIR / f"{sid}.png"
-            sfm.screenshot(path=img_path)
+            harness.screenshot(path=str(img_path))
             print(f"[+] Captured {img_path.name}")
             shutil.copy2(img_path, ARTIFACTS_DIR / img_path.name)
 
         # High-altitude aerial panoramic view of the whole 48-block grid
         print("[*] Capturing aerial panoramic view of entire 48-block grid...")
-        sfm.teleport(x=72.0, y=45.0, z=-20.0)
-        sfm.look(yaw=0, pitch=45)
+        harness.teleport(x=72.0, y=45.0, z=-20.0)
+        harness.look(yaw=0, pitch=45)
         time.sleep(0.5)
         aerial_path = OUTPUT_DIR / "00_aerial_grid_overview.png"
-        sfm.screenshot(path=aerial_path)
+        harness.screenshot(path=str(aerial_path))
         print(f"[+] Captured {aerial_path.name}")
         shutil.copy2(aerial_path, ARTIFACTS_DIR / aerial_path.name)
 
