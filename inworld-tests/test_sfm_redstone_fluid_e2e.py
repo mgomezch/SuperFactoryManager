@@ -35,17 +35,15 @@ from typing import Dict, Any, List, Optional
 from nhdev import NH_DEV_ROOT as ROOT_DIR
 
 from tools.agentharness import HarnessClient
-from tools.sfm_client import SfmClient
 from tools.bot.world_manager import WorldSandbox
 from tools.mcfleet.client import FleetClient
-from tools.mcfleet.schema import InstanceSpec, DisplayMode
+from tools.runner_instance import ensure_sfm_instance_running
 
 OUTPUT_DIR = ROOT_DIR / "output" / "sfm_redstone_fluid"
 ARTIFACTS_DIR = Path("/home/mgomezch/.gemini/antigravity/brain/a95f94f4-9edd-4aba-8218-d471d3db8067")
 PRISM_INSTANCE_DIR = Path.home() / ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/GTNH-2.9-sfm-dev/.minecraft"
 
 HARNESS_PORT = 25572
-SFM_PORT = 25573
 
 
 def get_saves_dir(client: FleetClient, harness: Optional[HarnessClient] = None, inst_name: str = "sfm-test-runner") -> Path:
@@ -68,63 +66,6 @@ def get_saves_dir(client: FleetClient, harness: Optional[HarnessClient] = None, 
     except Exception:
         pass
     return PRISM_INSTANCE_DIR / "saves"
-
-
-def ensure_sfm_instance_running():
-    sfm_client = SfmClient(port=SFM_PORT)
-    harness_client = HarnessClient(port=HARNESS_PORT)
-
-    if sfm_client.ping() and harness_client.ping():
-        print(f"[+] SFM test instance is already running on ports {HARNESS_PORT} & {SFM_PORT}")
-        try:
-            res = harness_client.exitworld()
-            print(f"[+] World exited to initial menu: {res}")
-        except Exception:
-            pass
-        return
-
-    client = FleetClient()
-    existing = None
-    try:
-        existing = client.get_instance("sfm-test-runner")
-    except Exception:
-        pass
-
-    if existing and existing.status and existing.status.pid:
-        print(f"[*] Instance 'sfm-test-runner' already present with PID {existing.status.pid}. Waiting for readiness...")
-    else:
-        print("[*] Launching SFM test instance via FleetClient...")
-        spec = InstanceSpec(
-            name="sfm-test-runner",
-            template="nix-gtnh-sfm-dev",
-            ephemeral=True,
-            display_mode=DisplayMode.HEADLESS,
-            display_socket="wayland-99",
-            port=HARNESS_PORT,
-            memory_min="4096m",
-            memory_max="8192m",
-            jvm_args=[
-                "-Dsfm.testHarness=true",
-                f"-Dsfm.harness.port={SFM_PORT}",
-            ],
-        )
-        inst = client.launch(spec, auto_start=True)
-        print(f"[+] Started instance '{spec.name}' (PID {inst.status.pid}). Waiting for controllers...")
-
-    start_t = time.time()
-    while time.time() - start_t < 240:
-        if sfm_client.ping() and harness_client.ping():
-            try:
-                st = harness_client.state()
-                if "GuiCustom" in st or "GuiMainMenu" in st or "MAIN_MENU" in st or "IN_WORLD" in st:
-                    print(f"[+] Both controllers ready after {time.time() - start_t:.1f}s ({st})!")
-                    return
-            except Exception:
-                pass
-        time.sleep(3)
-        print(f"[*] Waiting for game initialization... ({int(time.time() - start_t)}s elapsed)")
-
-    raise RuntimeError("Timed out waiting for SFM test instance controllers to start")
 
 
 def get_inv_items(harness: HarnessClient, x: int, y: int, z: int) -> List[Dict[str, Any]]:
@@ -175,7 +116,6 @@ def run_test_suite():
     client = FleetClient()
     ensure_sfm_instance_running()
 
-    sfm = SfmClient(port=SFM_PORT)
     harness = HarnessClient(port=HARNESS_PORT)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -195,7 +135,7 @@ def run_test_suite():
 
     with sandbox:
         print(f"[*] Launching world '{world_name}'...")
-        res = sfm.autoworld(name=world_name)
+        res = harness.autoworld(name=world_name)
         print(f"[<] {res}")
 
         print("[*] Waiting for player to enter world...")
@@ -213,19 +153,19 @@ def run_test_suite():
             raise RuntimeError(f"Failed to enter world, status: {harness.status()}")
 
         time.sleep(1.5)
-        sfm.closegui()
+        harness.close_gui()
         time.sleep(0.5)
 
         # Baseline game settings
         print("[*] Setting world environment...")
-        sfm.chat(message="/gamemode 1")
-        sfm.chat(message="/gamerule doDaylightCycle false")
-        sfm.chat(message="/gamerule doMobSpawning false")
-        sfm.chat(message="/time set 6000")
-        sfm.chat(message="/weather clear 999999")
-        sfm.chat(message="/difficulty 0")
-        sfm.chat(message="/cofh killall *")
-        sfm.chat(message="/setworldspawn 72 4 48")
+        harness.chat(message="/gamemode 1")
+        harness.chat(message="/gamerule doDaylightCycle false")
+        harness.chat(message="/gamerule doMobSpawning false")
+        harness.chat(message="/time set 6000")
+        harness.chat(message="/weather clear 999999")
+        harness.chat(message="/difficulty 0")
+        harness.chat(message="/cofh killall *")
+        harness.chat(message="/setworldspawn 72 4 48")
         time.sleep(0.5)
 
         # 12 Stations on 48-block grid
@@ -823,24 +763,24 @@ def run_test_suite():
             gx = st["gx"]
             gz = st["gz"]
             sid = st["id"]
-            sfm.closegui()
+            harness.close_gui()
             time.sleep(0.1)
             # Teleport close to station for 3D perspective
-            sfm.teleport(x=gx-2.5, y=7.5, z=gz-2.5)
-            sfm.look(yaw=-45, pitch=25)
+            harness.teleport(x=gx-2.5, y=7.5, z=gz-2.5)
+            harness.look(yaw=-45, pitch=25)
             time.sleep(0.3)
             img_path = OUTPUT_DIR / f"{sid}.png"
-            sfm.screenshot(path=img_path)
+            harness.screenshot(path=str(img_path))
             print(f"[+] Captured {img_path.name}")
             shutil.copy2(img_path, ARTIFACTS_DIR / img_path.name)
 
         # High-altitude aerial panoramic view of the whole 48-block grid
         print("[*] Capturing aerial panoramic view of entire 48-block grid...")
-        sfm.teleport(x=72.0, y=45.0, z=-20.0)
-        sfm.look(yaw=0, pitch=45)
+        harness.teleport(x=72.0, y=45.0, z=-20.0)
+        harness.look(yaw=0, pitch=45)
         time.sleep(0.5)
         aerial_path = OUTPUT_DIR / "00_rf_aerial_grid_overview.png"
-        sfm.screenshot(path=aerial_path)
+        harness.screenshot(path=str(aerial_path))
         print(f"[+] Captured {aerial_path.name}")
         shutil.copy2(aerial_path, ARTIFACTS_DIR / aerial_path.name)
 

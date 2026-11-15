@@ -28,13 +28,11 @@ from tools.mcfleet.client import FleetClient
 from tools.mcfleet.schema import InstanceSpec, DisplayMode
 from tools.bot.world_manager import WorldSandbox
 from tools.agentharness import HarnessClient
-from tools.sfm_client import SfmClient
 from tools.runner_instance import ensure_sfm_instance_running, get_saves_dir
 
 OUTPUT_DIR = Path("/tmp/sfm_doublechest_output")
 ARTIFACTS_DIR = Path("/home/mgomezch/.gemini/antigravity/brain/a95f94f4-9edd-4aba-8218-d471d3db8067")
 HARNESS_PORT = 25572
-SFM_PORT = 25573
 
 
 def get_inv_items(harness: HarnessClient, x: int, y: int, z: int) -> List[Dict[str, Any]]:
@@ -72,7 +70,6 @@ def run_doublechest_suite():
     client = FleetClient()
     ensure_sfm_instance_running()
 
-    sfm = SfmClient(port=SFM_PORT)
     harness = HarnessClient(port=HARNESS_PORT)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -103,7 +100,7 @@ def run_doublechest_suite():
 
     with sandbox:
         print(f"[*] Launching world '{world_name}'...")
-        res = sfm.autoworld(name=world_name)
+        res = harness.autoworld(name=world_name)
         print(f"[<] {res}")
 
         print("[*] Waiting for player to enter world...")
@@ -121,21 +118,21 @@ def run_doublechest_suite():
             raise RuntimeError(f"Failed to enter world, status: {harness.status()}")
 
         time.sleep(1.5)
-        sfm.closegui()
+        harness.close_gui()
         time.sleep(0.5)
 
         # Baseline game settings
         print("[*] Setting world environment...")
-        sfm.chat(message="/gamemode 1")
-        sfm.chat(message="/gamerule doDaylightCycle false")
-        sfm.chat(message="/gamerule doMobSpawning false")
-        sfm.chat(message="/time set 6000")
-        sfm.chat(message="/weather clear 99999")
+        harness.chat(message="/gamemode 1")
+        harness.chat(message="/gamerule doDaylightCycle false")
+        harness.chat(message="/gamerule doMobSpawning false")
+        harness.chat(message="/time set 6000")
+        harness.chat(message="/weather clear 99999")
         time.sleep(1.0)
 
         # Teleport player near the test grid so chunks are actively loaded
         print("[*] Teleporting player to test grid center...")
-        sfm.teleport(x=60.0, y=10.0, z=0.0)
+        harness.teleport(x=60.0, y=10.0, z=0.0)
         time.sleep(1.0)
 
         # =============================================================
@@ -485,22 +482,22 @@ def run_doublechest_suite():
             gx = st["gx"]
             gz = st["gz"]
             sid = st["id"]
-            sfm.closegui()
+            harness.close_gui()
             time.sleep(0.1)
-            sfm.teleport(x=gx-2.0, y=7.5, z=gz-2.0)
-            sfm.look(yaw=-45, pitch=25)
+            harness.teleport(x=gx-2.0, y=7.5, z=gz-2.0)
+            harness.look(yaw=-45, pitch=25)
             time.sleep(0.3)
             img_path = OUTPUT_DIR / f"{sid}.png"
-            sfm.screenshot(path=img_path)
+            harness.screenshot(path=str(img_path))
             print(f"[+] Captured {img_path.name}")
             shutil.copy2(img_path, ARTIFACTS_DIR / img_path.name)
 
         # Aerial overview
-        sfm.teleport(x=60.0, y=30.0, z=-15.0)
-        sfm.look(yaw=0, pitch=45)
+        harness.teleport(x=60.0, y=30.0, z=-15.0)
+        harness.look(yaw=0, pitch=45)
         time.sleep(0.5)
         aerial_path = OUTPUT_DIR / "00_doublechest_aerial_overview.png"
-        sfm.screenshot(path=aerial_path)
+        harness.screenshot(path=str(aerial_path))
         print(f"[+] Captured {aerial_path.name}")
         shutil.copy2(aerial_path, ARTIFACTS_DIR / aerial_path.name)
 

@@ -16,12 +16,10 @@ from nhdev import NH_DEV_ROOT as REPO_ROOT
 
 from tools.agentharness import HarnessClient
 from tools.mcfleet.client import FleetClient
-from tools.sfm_client import SfmClient
 from tools.runner_instance import ensure_sfm_instance_running, get_saves_dir
 from tools.bot.world_manager import WorldSandbox
 
 HARNESS_PORT = 25572
-SFM_PORT = 25573
 
 OUTPUT_DIR = REPO_ROOT / "output" / "fancy_cable_visual"
 ARTIFACTS_DIR = Path("/home/mgomezch/.gemini/antigravity/brain/a95f94f4-9edd-4aba-8218-d471d3db8067")
@@ -29,20 +27,20 @@ ARTIFACTS_DIR = Path("/home/mgomezch/.gemini/antigravity/brain/a95f94f4-9edd-4ab
 
 import math
 
-def capture_look_at(sfm: SfmClient, filename: str, cx: float, cy: float, cz: float, tx: float, ty: float, tz: float, sleep_after: float = 0.5):
-    sfm.closegui()
+def capture_look_at(harness: HarnessClient, filename: str, cx: float, cy: float, cz: float, tx: float, ty: float, tz: float, sleep_after: float = 0.5):
+    harness.close_gui()
     time.sleep(0.1)
-    sfm.teleport(x=cx, y=cy, z=cz)
+    harness.teleport(x=cx, y=cy, z=cz)
     dx = tx - cx
     dy = ty - (cy + 1.62)
     dz = tz - cz
     dist_xz = math.hypot(dx, dz)
     yaw = math.degrees(math.atan2(-dx, dz))
     pitch = math.degrees(math.atan2(-dy, dist_xz))
-    sfm.look(yaw=yaw, pitch=pitch)
+    harness.look(yaw=yaw, pitch=pitch)
     time.sleep(sleep_after)
     target_path = OUTPUT_DIR / filename
-    sfm.screenshot(path=target_path)
+    harness.screenshot(path=str(target_path))
     print(f"[+] Captured {filename}", flush=True)
     if ARTIFACTS_DIR.exists():
         shutil.copy2(target_path, ARTIFACTS_DIR / filename)
@@ -52,7 +50,6 @@ def run_visual_suite(prefix: str = "current"):
     client = FleetClient()
     ensure_sfm_instance_running()
 
-    sfm = SfmClient(port=SFM_PORT)
     harness = HarnessClient(port=HARNESS_PORT)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,7 +70,7 @@ def run_visual_suite(prefix: str = "current"):
 
     with sandbox:
         print(f"[*] Launching world '{world_name}'...")
-        res = sfm.autoworld(name=world_name)
+        res = harness.autoworld(name=world_name)
         print(f"[<] {res}")
 
         print("[*] Waiting for player to enter world...")
@@ -91,13 +88,13 @@ def run_visual_suite(prefix: str = "current"):
             raise RuntimeError(f"Failed to enter world: {harness.status()}")
 
         time.sleep(1.5)
-        sfm.closegui()
-        sfm.chat(message="/gamemode 1")
-        sfm.chat(message="/gamerule doDaylightCycle false")
-        sfm.chat(message="/gamerule doMobSpawning false")
-        sfm.chat(message="/time set 6000")
-        sfm.chat(message="/weather clear 999999")
-        sfm.chat(message="/difficulty 0")
+        harness.close_gui()
+        harness.chat(message="/gamemode 1")
+        harness.chat(message="/gamerule doDaylightCycle false")
+        harness.chat(message="/gamerule doMobSpawning false")
+        harness.chat(message="/time set 6000")
+        harness.chat(message="/weather clear 999999")
+        harness.chat(message="/difficulty 0")
         time.sleep(0.5)
 
         # Clear area
@@ -153,31 +150,31 @@ def run_visual_suite(prefix: str = "current"):
         print("\n[*] Capturing screenshots from various perspectives...", flush=True)
 
         # 1. Overview of all test setups
-        capture_look_at(sfm, f"{prefix}_00_all_setups_overview.png", 20.0, 11.0, -12.0, 20.0, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_00_all_setups_overview.png", 20.0, 11.0, -12.0, 20.0, 5.5, 0.5)
 
         # 2. Station A: Standalone cable close-up
-        capture_look_at(sfm, f"{prefix}_01_standalone_cable.png", 0.5, 4.2, -1.8, 0.5, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_01_standalone_cable.png", 0.5, 4.2, -1.8, 0.5, 5.5, 0.5)
 
         # 3. Station B: Straight line cable - isometric showing core shoulders
-        capture_look_at(sfm, f"{prefix}_02_straight_line_iso.png", 9.0, 4.8, -2.0, 11.0, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_02_straight_line_iso.png", 9.0, 4.8, -2.0, 11.0, 5.5, 0.5)
 
         # 4. Station B: Straight line cable - close-up on middle cable junction
-        capture_look_at(sfm, f"{prefix}_03_straight_line_junction_closeup.png", 10.3, 4.2, -1.2, 11.0, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_03_straight_line_junction_closeup.png", 10.3, 4.2, -1.2, 11.0, 5.5, 0.5)
 
         # 5. Station C: T-Junction isometric
-        capture_look_at(sfm, f"{prefix}_04_t_junction_iso.png", 18.5, 4.8, -2.0, 20.5, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_04_t_junction_iso.png", 18.5, 4.8, -2.0, 20.5, 5.5, 0.5)
 
         # 6. Station C: T-Junction looking into the corner junction / shoulder
-        capture_look_at(sfm, f"{prefix}_05_t_junction_corner_closeup.png", 19.5, 4.2, 1.8, 20.5, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_05_t_junction_corner_closeup.png", 19.5, 4.2, 1.8, 20.5, 5.5, 0.5)
 
         # 7. Station D: 6-Way Star Cross isometric
-        capture_look_at(sfm, f"{prefix}_06_star_cross_iso.png", 28.0, 5.5, -2.5, 30.5, 6.5, 0.5)
+        capture_look_at(harness, f"{prefix}_06_star_cross_iso.png", 28.0, 5.5, -2.5, 30.5, 6.5, 0.5)
 
         # 8. Station D: 6-Way Star Cross looking slightly up at underside shoulders
-        capture_look_at(sfm, f"{prefix}_07_star_cross_underneath.png", 29.0, 3.8, -1.8, 30.5, 6.5, 0.5)
+        capture_look_at(harness, f"{prefix}_07_star_cross_underneath.png", 29.0, 3.8, -1.8, 30.5, 6.5, 0.5)
 
         # 9. Station E: Cable to Chest connection
-        capture_look_at(sfm, f"{prefix}_08_chest_connection.png", 39.0, 4.5, -1.8, 40.5, 5.5, 0.5)
+        capture_look_at(harness, f"{prefix}_08_chest_connection.png", 39.0, 4.5, -1.8, 40.5, 5.5, 0.5)
 
         print("[*] Completed capturing visual screenshots!", flush=True)
         time.sleep(0.5)
