@@ -65,7 +65,7 @@ public class TestAutomationController {
 
     public static synchronized void init() {
         if (INSTANCE == null) {
-            int port = 25573;
+            int port = defaultPort(Minecraft.getMinecraft().mcDataDir);
             String portProp = System.getProperty("sfm.harness.port");
             if (portProp == null || portProp.isEmpty()) {
                 portProp = System.getProperty("gtnh.sfm.port");
@@ -78,6 +78,25 @@ public class TestAutomationController {
             INSTANCE = new TestAutomationController(port);
             INSTANCE.start();
         }
+    }
+
+    /**
+     * The port when the JVM names none: 25573 in a Prism instance named ...-dev, 25673 in one named ...-test (the
+     * user's manual-testing instances), 25773 anywhere else (games the user plays), so a script's default port reaches
+     * a -dev instance or nothing. AgentHarness does the same with its ports, Note [Harness ports by kind of game].
+     */
+    static int defaultPort(File gameDir) {
+        File dir = gameDir != null ? gameDir.getAbsoluteFile() : null;
+        if (dir != null && (dir.getName()
+            .equals(".minecraft")
+            || dir.getName()
+                .equals("minecraft"))) {
+            dir = dir.getParentFile();
+        }
+        String name = dir != null ? dir.getName() : "";
+        if (name.endsWith("-dev")) return 25573;
+        if (name.endsWith("-test")) return 25673;
+        return 25773;
     }
 
     public TestAutomationController(int port) {
