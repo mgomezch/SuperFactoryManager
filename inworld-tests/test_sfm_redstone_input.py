@@ -1,75 +1,99 @@
 #!/usr/bin/env python3
+"""IF REDSTONE > 0 gating by a Steve's Factory Manager receiver on the manager's network.
+
+A manager moves a chest's iron to another chest only while the receiver is powered: nothing moves until a redstone
+block is placed next to the receiver, and then all 64 ingots do.  Runs in its own superflat world on the SFM test
+runner:
+
+    mc-fleet test --instance sfm-test-runner -- python3 inworld-tests/test_sfm_redstone_input.py
+"""
+
+import os
 import sys
 import time
 
 import nhdev  # noqa: F401 (nh-dev tools on sys.path)
 from tools.agentharness import HarnessClient
+from tools.bot.world_manager import WorldSandbox
+from tools.mcfleet.client import FleetClient
+from tools.runner_instance import ensure_sfm_instance_running, get_saves_dir
 
-def run_test():
-    client = HarnessClient(port=25572)
-    print("Closing any GUI:", client.close_gui())
-    print("Status:", client.status())
+HARNESS_PORT = int(os.environ.get("MCFLEET_HARNESS_PORT", "25572"))
 
-    # Build area at X=28..36, Y=5..10, Z=418..425
-    print("Clearing redstone input test area...")
+# Manager, cable and receiver in a row along x.  The destination chest sits beside the cable: on top of the receiver
+# it would not be on the manager's network, and next to the source chest the two would make one double chest.
+MANAGER = (30, 6, 420)
+CABLE = (31, 6, 420)
+RECEIVER = (32, 6, 420)
+POWER = (33, 6, 420)
+SRC = (30, 7, 420)
+DST = (31, 6, 421)
+
+
+def iron(client, pos):
+    info = client.container_info(*pos)
+    return sum(s.get("count", 0) for s in info.get("slots", []) if s.get("item") == "minecraft:iron_ingot")
+
+
+def build_and_check(client):
+    mx, my, mz = MANAGER
+    client.stand(28, 6, 418)
     client.clear_area(28, 6, 418, 36, 12, 425)
-
     for x in range(28, 36):
-        for z in range(419, 422):
-            client.setblock(x=x, y=5, z=z, block="stone")
-
-    # Place Manager at 30, 6, 420
-    print("Manager:", client.setblock(x=30, y=6, z=420, block="superfactorymanager:manager"))
-
-    # Place Cable at 31, 6, 420
-    print("Cable:", client.setblock(x=31, y=6, z=420, block="superfactorymanager:cable"))
-
-    # Place Receiver at 32, 6, 420
-    print("Receiver:", client.setblock(x=32, y=6, z=420, block="StevesFactoryManager:BlockCableInputName"))
-
-    # Place Chests
-    print("Chest src:", client.setblock(x=30, y=7, z=420, block="chest"))
-    print("Chest dst:", client.setblock(x=31, y=7, z=420, block="chest"))
-
+        for z in range(419, 423):
+            client.set_block(x, 5, z, "stone")
+    client.set_block(*MANAGER, "superfactorymanager:manager")
+    client.set_block(*CABLE, "superfactorymanager:cable")
+    client.set_block(*RECEIVER, "StevesFactoryManager:BlockCableInputName")
+    client.set_block(*SRC, "chest")
+    client.set_block(*DST, "chest")
     time.sleep(0.5)
+    client.set_container_slot(*SRC, 0, "minecraft:iron_ingot", 64)
 
-    # Populate Chest src
-    client.set_container_slot(x=30, y=7, z=420, slot=0, item="minecraft:iron_ingot", count=64)
-    print("Chest src info:", client.container_info(x=30, y=7, z=420))
-    print("Chest dst info:", client.container_info(x=31, y=7, z=420))
+    for label, pos in (("src", SRC), ("dst", DST), ("rcv", RECEIVER)):
+        print(f"Label {label}:", client.sfm_label(mx, my, mz, label, *pos))
+    program = 'EVERY 20 TICKS DO\n  IF REDSTONE > 0 THEN\n    INPUT FROM "src"\n    OUTPUT TO "dst"\n  END\nEND\n'
+    res = client.sfm_program(mx, my, mz, program, start=True)
+    print("Program:", res)
+    assert res["valid"], f"Program failed to compile: {res}"
 
-    # Wait for network scan
     time.sleep(1.5)
+    unpowered = iron(client, DST)
+    print("Unpowered, dst iron:", unpowered)
+    assert unpowered == 0, f"Items moved with the receiver unpowered: {unpowered}"
 
-    # Labels
-    print("Label src:", client.sfm_label(x=30, y=6, z=420, label="src", bx=30, by=7, bz=420))
-    print("Label dst:", client.sfm_label(x=30, y=6, z=420, label="dst", bx=31, by=7, bz=420))
-    print("Label rcv:", client.sfm_label(x=30, y=6, z=420, label="rcv", bx=32, by=6, bz=420))
-
-    # Program: Only transfer if redstone > 0
-    program = "EVERY 20 TICKS DO\n  IF REDSTONE > 0 THEN\n    INPUT FROM \"src\"\n    OUTPUT TO \"dst\"\n  END\nEND\n"
-    print("Setting program conditional on REDSTONE > 0...")
-    print(client.sfm_program(x=30, y=6, z=420, code=program))
-
-    # Wait 1.5s - since no redstone power, items should NOT move
+    client.set_block(*POWER, "redstone_block")
     time.sleep(1.5)
-    print("Chest dst (expect empty):", client.container_info(x=31, y=7, z=420))
+    powered = iron(client, DST)
+    print("Powered, dst iron:", powered)
+    if powered != 64:
+        print(client.sfm_logs(mx, my, mz))
+    assert powered == 64, f"Expected 64 iron in dst once powered, got {powered}"
+    print("✓ SFM REDSTONE INPUT TEST PASSED")
 
-    # Now apply redstone to the receiver at (32, 6, 420) by placing a redstone block next to it at (33, 6, 420)
-    print("Powering receiver with redstone_block at (33, 6, 420)...")
-    client.setblock(x=33, y=6, z=420, block="redstone_block")
-    time.sleep(0.2)
-    print("Receiver power reading:", client.redstone_power(x=32, y=6, z=420))
 
-    # Wait 1.5s for next trigger cycle
-    time.sleep(1.5)
+def main():
+    ensure_sfm_instance_running()
+    client = HarnessClient(port=HARNESS_PORT)
+    saves = get_saves_dir(FleetClient(), "sfm-test-runner")
+    saves.mkdir(parents=True, exist_ok=True)
+    world = "sfm_redstone_input"
+    with WorldSandbox("superflat_empty", world_name=world, saves_dir=saves, on_unmount=lambda: client.exitworld()):
+        client.autoworld(name=world)
+        start = time.time()
+        while client.state() != "IN_WORLD":
+            if time.time() - start > 120:
+                raise RuntimeError(f"Failed to enter world: {client.status()}")
+            time.sleep(1.0)
+        time.sleep(1.5)
+        client.close_gui()
+        client.chat(message="/gamemode 1")
+        build_and_check(client)
 
-    print("--- SFM LOGS ---")
-    print(client.sfm_logs(x=30, y=6, z=420))
-    print("----------------")
-
-    print("Chest src (expect empty or reduced):", client.container_info(x=30, y=7, z=420))
-    print("Chest dst (expect 64 iron ingots):", client.container_info(x=31, y=7, z=420))
 
 if __name__ == "__main__":
-    run_test()
+    try:
+        main()
+    except AssertionError as e:
+        print(f"FAILED: {e}")
+        sys.exit(1)
