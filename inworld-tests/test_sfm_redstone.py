@@ -22,7 +22,6 @@ from nhdev import NH_DEV_ROOT as REPO_ROOT
 from tools.agentharness import HarnessClient, HarnessError
 from tools.inworld_test_driver import InWorldTestDriver
 
-# Spawn chunk coordinates
 MX, MY, MZ = 520, 6, 40
 CABLE_X, CABLE_Y, CABLE_Z = 521, 6, 40
 EMIT_X, EMIT_Y, EMIT_Z = 522, 6, 40
@@ -35,6 +34,10 @@ def build_sfm_redstone(client: HarnessClient):
     print("Closing any open GUI...")
     client.close_gui()
 
+    # Stand at the build first: the world's spawn is elsewhere, and a chunk no player is near doesn't stay loaded
+    client.stand(PL_X, PL_Y, PL_Z)
+    client.wait(5)
+
     # Clear build area
     print(f"Clearing redstone test area [{MX-2}, {MY-1}, {MZ-2}] -> [{MX+6}, {MY+4}, {MZ+5}]...")
     client.clear_area(MX - 2, MY - 1, MZ - 2, MX + 6, MY + 4, MZ + 5)
@@ -46,11 +49,11 @@ def build_sfm_redstone(client: HarnessClient):
 
     # Place Manager
     print("Placing Manager...")
-    client.setblock(MX, MY, MZ, "StevesFactoryManager:BlockMachineManagerName")
+    client.setblock(MX, MY, MZ, "superfactorymanager:manager")
 
     # Place Cable
     print("Placing Cable...")
-    client.setblock(CABLE_X, CABLE_Y, CABLE_Z, "StevesFactoryManager:BlockCableName")
+    client.setblock(CABLE_X, CABLE_Y, CABLE_Z, "superfactorymanager:cable")
 
     # Place Emitter
     print("Placing Redstone Emitter...")
@@ -117,7 +120,7 @@ def test_sfm_redstone(client: HarnessClient):
     print("[✓] Redstone OFF (level 0) verified!")
 
 
-def run_test(port: int = 25571):
+def run_test(port: int = int(os.environ.get("MCFLEET_HARNESS_PORT", "25572"))):
     driver = InWorldTestDriver(
         tag="sfm_redstone",
         port=port,
@@ -130,7 +133,7 @@ def run_test(port: int = 25571):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="SFM Redstone In-World Test")
-    parser.add_argument("--port", type=int, default=25571, help="AgentHarness port (default: 25571)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCFLEET_HARNESS_PORT", "25572")), help="AgentHarness port (default: $MCFLEET_HARNESS_PORT, else 25572)")
     args = parser.parse_args()
     success = run_test(port=args.port)
     sys.exit(0 if success else 1)

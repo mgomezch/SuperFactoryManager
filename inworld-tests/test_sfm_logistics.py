@@ -22,10 +22,9 @@ from nhdev import NH_DEV_ROOT as REPO_ROOT
 from tools.agentharness import HarnessClient, HarnessError
 from tools.inworld_test_driver import InWorldTestDriver
 
-# Spawn chunk coordinates
 MX, MY, MZ = 500, 6, 40
 CA_X, CA_Y, CA_Z = 501, 7, 40
-CB_X, CB_Y, CB_Z = 502, 7, 40
+CB_X, CB_Y, CB_Z = 502, 6, 41  # beside the cable: next to chest A it would make one double chest
 PL_X, PL_Y, PL_Z = 500, 6, 38
 
 def build_sfm_logistics(client: HarnessClient):
@@ -33,6 +32,10 @@ def build_sfm_logistics(client: HarnessClient):
     print("------------------------------------------------------------")
     print("Closing any open GUI...")
     client.close_gui()
+
+    # Stand at the build first: the world's spawn is elsewhere, and a chunk no player is near doesn't stay loaded
+    client.stand(PL_X, PL_Y, PL_Z)
+    client.wait(5)
 
     # Clear build area
     print(f"Clearing build area [{MX-2}, {MY-1}, {MZ-2}] -> [{MX+5}, {MY+4}, {MZ+5}]...")
@@ -45,12 +48,12 @@ def build_sfm_logistics(client: HarnessClient):
 
     # Place Manager
     print("Placing Manager...")
-    client.setblock(MX, MY, MZ, "StevesFactoryManager:BlockMachineManagerName")
+    client.setblock(MX, MY, MZ, "superfactorymanager:manager")
 
     # Place Cables
     print("Placing Cables...")
-    client.setblock(MX + 1, MY, MZ, "StevesFactoryManager:BlockCableName")
-    client.setblock(MX + 2, MY, MZ, "StevesFactoryManager:BlockCableName")
+    client.setblock(MX + 1, MY, MZ, "superfactorymanager:cable")
+    client.setblock(MX + 2, MY, MZ, "superfactorymanager:cable")
 
     # Place Chests
     print("Placing Chests...")
@@ -108,11 +111,12 @@ def test_sfm_logistics(client: HarnessClient):
     print("  Chest B:", chest_b_info)
 
     # Assert Chest B has received the iron ingots
-    assert "iron_ingot" in chest_b_info or "64" in chest_b_info, "Expected iron_ingot to transfer to Chest B"
+    moved = sum(s.get("count", 0) for s in chest_b_info.get("slots", []) if s.get("item") == "minecraft:iron_ingot")
+    assert moved == 64, f"Expected 64 iron ingots in Chest B, got {moved}"
     print("[✓] SFM item transfer verified successfully!")
 
 
-def run_test(port: int = 25571):
+def run_test(port: int = int(os.environ.get("MCFLEET_HARNESS_PORT", "25572"))):
     driver = InWorldTestDriver(
         tag="sfm_logistics",
         port=port,
@@ -125,7 +129,7 @@ def run_test(port: int = 25571):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="SFM Logistics In-World Test")
-    parser.add_argument("--port", type=int, default=25571, help="AgentHarness port (default: 25571)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCFLEET_HARNESS_PORT", "25572")), help="AgentHarness port (default: $MCFLEET_HARNESS_PORT, else 25572)")
     args = parser.parse_args()
     success = run_test(port=args.port)
     sys.exit(0 if success else 1)
