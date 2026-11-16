@@ -316,12 +316,12 @@ def run_test_suite():
         harness.set_block(x4 + 1, 4, z4, "superfactorymanager:cable", 0)
         harness.set_block(x4 + 2, 4, z4, "StevesFactoryManager:BlockCableInputName", 0)
         harness.set_block(x4, 5, z4, "chest", 0)
-        harness.set_block(x4 + 2, 5, z4, "chest", 0)
+        harness.set_block(x4 + 1, 4, z4 + 1, "chest", 0)
         time.sleep(0.5)
 
         harness.set_container_slot(x4, 5, z4, 0, "minecraft:gold_ingot", 64)
         harness.sfm_label(x=x4, y=4, z=z4, label="src", bx=x4, by=5, bz=z4)
-        harness.sfm_label(x=x4, y=4, z=z4, label="dst", bx=x4+2, by=5, bz=z4)
+        harness.sfm_label(x=x4, y=4, z=z4, label="dst", bx=x4+1, by=4, bz=z4+1)
         harness.sfm_label(x=x4, y=4, z=z4, label="rcv", bx=x4+2, by=4, bz=z4)
 
         prog4 = "EVERY REDSTONE PULSE DO\n  INPUT 16 FROM \"src\"\n  OUTPUT TO \"dst\"\nEND\n"
@@ -331,7 +331,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         # Before pulse: dst must have 0
-        items_pre = count_items(get_inv_items(harness, x4 + 2, 5, z4), "minecraft:gold_ingot")
+        items_pre = count_items(get_inv_items(harness, x4 + 1, 4, z4 + 1), "minecraft:gold_ingot")
         print(f"[Station 4 Pre-pulse] Dst items: {items_pre}")
         assert items_pre == 0, f"Expected 0 items before pulse, got {items_pre}"
 
@@ -342,7 +342,7 @@ def run_test_suite():
         harness.sfm_update(x=x4, y=4, z=z4)
         time.sleep(0.5)
 
-        items_pulse1 = count_items(get_inv_items(harness, x4 + 2, 5, z4), "minecraft:gold_ingot")
+        items_pulse1 = count_items(get_inv_items(harness, x4 + 1, 4, z4 + 1), "minecraft:gold_ingot")
         print(f"[Station 4 Pulse 1] Dst items: {items_pulse1}")
         assert items_pulse1 == 16, f"Expected 16 items after pulse 1, got {items_pulse1}"
 
@@ -351,7 +351,7 @@ def run_test_suite():
         time.sleep(0.2)
         harness.sfm_update(x=x4, y=4, z=z4)
         time.sleep(0.3)
-        items_mid = count_items(get_inv_items(harness, x4 + 2, 5, z4), "minecraft:gold_ingot")
+        items_mid = count_items(get_inv_items(harness, x4 + 1, 4, z4 + 1), "minecraft:gold_ingot")
         assert items_mid == 16, f"Falling edge triggered unexpectedly: {items_mid}"
 
         # Deliver pulse 2 (rising edge)
@@ -360,7 +360,7 @@ def run_test_suite():
         time.sleep(0.2)
         harness.sfm_update(x=x4, y=4, z=z4)
         time.sleep(0.5)
-        items_pulse2 = count_items(get_inv_items(harness, x4 + 2, 5, z4), "minecraft:gold_ingot")
+        items_pulse2 = count_items(get_inv_items(harness, x4 + 1, 4, z4 + 1), "minecraft:gold_ingot")
         print(f"[Station 4 Pulse 2] Dst items: {items_pulse2}")
         assert items_pulse2 == 32, f"Expected 32 items after pulse 2, got {items_pulse2}"
         test_results.append({"id": s4["id"], "title": s4["title"], "status": "PASS", "details": "Verified rising-edge pulse trigger with 16 items transferred per pulse (32 total)."})
@@ -381,12 +381,12 @@ def run_test_suite():
         harness.set_block(x5 + 1, 4, z5, "superfactorymanager:cable", 0)
         harness.set_block(x5 + 2, 4, z5, "StevesFactoryManager:BlockCableInputName", 0)
         harness.set_block(x5, 5, z5, "chest", 0)
-        harness.set_block(x5 + 2, 5, z5, "chest", 0)
+        harness.set_block(x5 + 1, 4, z5 + 1, "chest", 0)
         time.sleep(0.5)
 
         harness.set_container_slot(x5, 5, z5, 0, "minecraft:diamond", 64)
         harness.sfm_label(x=x5, y=4, z=z5, label="src", bx=x5, by=5, bz=z5)
-        harness.sfm_label(x=x5, y=4, z=z5, label="dst", bx=x5+2, by=5, bz=z5)
+        harness.sfm_label(x=x5, y=4, z=z5, label="dst", bx=x5+1, by=4, bz=z5+1)
         harness.sfm_label(x=x5, y=4, z=z5, label="rcv", bx=x5+2, by=4, bz=z5)
 
         prog5 = "EVERY 20 TICKS DO\n  IF REDSTONE LEVEL >= 8 THEN\n    INPUT 10 FROM \"src\"\n    OUTPUT TO \"dst\"\n  END\nEND\n"
@@ -396,7 +396,7 @@ def run_test_suite():
         time.sleep(0.5)
 
         # Without power: conditional fails
-        pre5 = count_items(get_inv_items(harness, x5 + 2, 5, z5), "minecraft:diamond")
+        pre5 = count_items(get_inv_items(harness, x5 + 1, 4, z5 + 1), "minecraft:diamond")
         print(f"[Station 5 Pre-power] Dst diamonds: {pre5}")
         assert pre5 == 0, f"Expected 0, got {pre5}"
 
@@ -406,18 +406,18 @@ def run_test_suite():
         harness.sfm_update(x=x5, y=4, z=z5)
         time.sleep(0.5)
 
-        post5 = count_items(get_inv_items(harness, x5 + 2, 5, z5), "minecraft:diamond")
+        post5 = count_items(get_inv_items(harness, x5 + 1, 4, z5 + 1), "minecraft:diamond")
         print(f"[Station 5 Powered] Dst diamonds: {post5}")
         assert post5 >= 10, f"Expected at least 10 diamonds, got {post5}"
 
         # Remove power
         harness.set_block(x5 + 3, 4, z5, "air", 0)
         time.sleep(0.5)
-        post5_stopped = count_items(get_inv_items(harness, x5 + 2, 5, z5), "minecraft:diamond")
+        post5_stopped = count_items(get_inv_items(harness, x5 + 1, 4, z5 + 1), "minecraft:diamond")
         time.sleep(1.2)
         harness.sfm_update(x=x5, y=4, z=z5)
         time.sleep(0.5)
-        post5_unpowered = count_items(get_inv_items(harness, x5 + 2, 5, z5), "minecraft:diamond")
+        post5_unpowered = count_items(get_inv_items(harness, x5 + 1, 4, z5 + 1), "minecraft:diamond")
         assert post5_unpowered == post5_stopped, f"Expected unchanged {post5_stopped} diamonds after power removed, got {post5_unpowered}"
         test_results.append({"id": s5["id"], "title": s5["title"], "status": "PASS", "details": "Gated item transfer based on network redstone signal level >= 8."})
 
